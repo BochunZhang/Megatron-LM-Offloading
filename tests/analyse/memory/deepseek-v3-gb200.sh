@@ -25,6 +25,8 @@ export NCCL_GRAPH_REGISTER=0
 export LOCAL_RANK=0
 export LOCAL_WORLD_SIZE=4
 export TOKENIZERS_PARALLELISM=false
+export WORLD_SIZE=64
+
 
 # =============================================================================
 # Python Path
@@ -204,13 +206,13 @@ echo ""
 #     fi
 # }
 
-if [ -z "${WORLD_SIZE+x}" ]; then
-    WORLD_SIZE=$LOCAL_WORLD_SIZE
-    echo "set WORLD_SIZE: $WORLD_SIZE"
-else
-    WORLD_SIZE=$[$WORLD_SIZE * $LOCAL_WORLD_SIZE]
-    echo "WORLD_SIZE: $WORLD_SIZE"
-fi
+# if [ -z "${WORLD_SIZE+x}" ]; then
+#     WORLD_SIZE=$LOCAL_WORLD_SIZE
+#     echo "set WORLD_SIZE: $WORLD_SIZE"
+# else
+#     WORLD_SIZE=$[$WORLD_SIZE * $LOCAL_WORLD_SIZE]
+#     echo "WORLD_SIZE: $WORLD_SIZE"
+# fi
 
 
 # # args
