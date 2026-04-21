@@ -24,7 +24,7 @@ export LOCAL_WORLD_SIZE=4
 export TOKENIZERS_PARALLELISM=false
 
 # Add megatron to PYTHONPATH
-export CURRENT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
+export CURRENT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 export PYTHONPATH=$CURRENT_PATH:$PYTHONPATH
 
 # =============================================================================
@@ -385,9 +385,9 @@ LOAD_ARGS=(
 )
 
 # =============================================================================
-# Run the theoretical flops calculation
+# Run the theoretical memory calculation
 # =============================================================================
-echo "Running theoretical GEMM flops calculation..."
+echo "Running theoretical memory calculation..."
 echo ""
 
 python3 $CURRENT_PATH/tools/report_theoretical_memory.py \
