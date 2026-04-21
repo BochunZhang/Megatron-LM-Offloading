@@ -40,7 +40,7 @@ TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
 # DeepSeek-V3 Model Parameters
 NUM_LAYER=61
 NUM_EXPERT=256
-MOE_FREQ="([0]*[1]*58)"
+MOE_FREQ="([0]*3+[1]*58)"
 SEQ_LEN=4096
 
 # Default dispatcher (alltoall as requested)
