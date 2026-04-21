@@ -25,7 +25,7 @@ export NCCL_GRAPH_REGISTER=0
 export LOCAL_RANK=0
 export LOCAL_WORLD_SIZE=4
 export TOKENIZERS_PARALLELISM=false
-export WORLD_SIZE=64
+export WORLD_SIZE=4
 
 
 # =============================================================================
@@ -125,6 +125,7 @@ case "$CASE" in
         VPP=4
         EP=32
         DP=32
+        PP_LAYOUT="Et|(tt|)*30L"
         ;;
     2)
         echo "=== Case 2: 64 GPUs, DP=64, EP=32 ==="
