@@ -59,7 +59,9 @@ if __name__ == "__main__":
     assert len(sys.argv) > 2
     output_dir = sys.argv[1]
     model_name = sys.argv[2]
-
+    sys.argv = sys.argv[3:]
+    
+    
     # Create output directory if it doesn't exist
     output_dir = os.path.join(output_dir, 'results')
     os.makedirs(output_dir, exist_ok=True)
