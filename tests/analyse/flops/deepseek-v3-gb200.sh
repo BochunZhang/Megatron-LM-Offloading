@@ -2,7 +2,7 @@
 # Script to analyze theoretical GEMM flops for DeepSeek-V3 model
 # reference:deepseek-v3-gb200-reproduce-guide.md
 
-set -x
+# set -x
 
 # =============================================================================
 # Environment Variables
