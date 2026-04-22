@@ -42,8 +42,6 @@ class MemEstimator(metaclass=MetaBase):
         """
         self.name = f"{prefix}.{self.name}" if prefix else self.name
         print(f"{self.name}")
-        for key, module in self._modules.items():
-            module._set_prefix(self.name)
         for module in self._modules_list:
             module._set_prefix(self.name)
         # if hasattr(self, "modules"):
@@ -128,6 +126,8 @@ class MemEstimator(metaclass=MetaBase):
             modules = self.__dict__.get("_modules", {})
             modules[name] = value
             value._set_name(name)
+            _modules_list = self.__dict__.get("_modules_list", {})
+            _modules_list.append(value)
         else:
             pass
         return super().__setattr__(name, value)

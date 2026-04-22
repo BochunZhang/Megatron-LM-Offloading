@@ -532,6 +532,11 @@ class SequentialMLP(MemEstimator):
         self.moe_extended_tp = config.moe_extended_tp
         self.num_local_experts = num_local_experts
         self.local_experts = ModuleList()
+
+        for i, layer in enumerate(self.local_experts.modules):
+            layer._set_name(f"expert{i}")
+            self._modules_list.append(layer)
+
         for _ in range(self.num_local_experts):
             expert = MLP(self.config, submodules, is_expert=True)
             self.local_experts.append(expert)
@@ -1074,7 +1079,8 @@ class TransformerLayer(MemEstimator):
         )
 
         # [Module 3: BiasDropoutFusion]
-        self.self_attn_bda = build_module(submodules.self_attn_bda)
+        # self.self_attn_bda = build_module(submodules.self_attn_bda)
+        self.self_attn_bda = GetBiasDropoutAdd()
 
         # [Module 4: Post SelfAttention] Optional Layernorm after self-attn
         self.pre_cross_attn_layernorm = build_module(
@@ -1108,7 +1114,8 @@ class TransformerLayer(MemEstimator):
             self.mlp.set_layer_number(self.layer_number)
 
         # [Module 9: BiasDropoutFusion]
-        self.mlp_bda = build_module(submodules.mlp_bda)
+        # self.mlp_bda = build_module(submodules.mlp_bda)
+        self.mlp_bda = GetBiasDropoutAdd()
 
         self.recompute_input_layernorm = False
         self.recompute_pre_mlp_layernorm = False
