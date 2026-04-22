@@ -111,7 +111,7 @@ class GPTModel(MemEstimator):
                 grad_output_buffer=self.grad_output_buffer,
             )
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = 0
         if self.pre_process:
             ret += self.embedding.num_parameter()

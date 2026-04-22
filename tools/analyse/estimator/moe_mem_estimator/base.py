@@ -32,6 +32,7 @@ class MemEstimator(metaclass=MetaBase):
         self._modules = {}
         self._modules_list = []
         self.name = self.__class__.__name__  # default name
+        self.num_parameters = -1
 
     def _set_name(self, name):
         self.name = name
@@ -97,11 +98,26 @@ class MemEstimator(metaclass=MetaBase):
     def _get_name(self):
         return self.__class__.__name__
 
-    def num_parameter(self):
+    def num_parameter_(self):
         """
         Calculate number of the model parameters
         """
         raise NotImplemented
+    
+    def num_parameter(self):
+        if self.num_parameters < 0:
+            self.num_parameters = self.num_parameter_()
+        return self.num_parameters
+    
+    def dump_info(self):
+        ret = {}
+        ret["name"] = self.name
+        ret["n_params"] = self.num_parameter()
+        sub = []
+        for module in self._modules_list:
+            sub.append(module.dump_info())
+        ret["submodules"] = sub
+        return ret
 
     def num_activation(self, input_shape: list[int]):
         """
@@ -137,7 +153,9 @@ class MemEstimator(metaclass=MetaBase):
         if name in modules:
             del modules[name]
         return super().__delattr__(name)
-
+    
+    def dump_json(self):
+        pass
 
 _global_config: TransformerConfig = None
 

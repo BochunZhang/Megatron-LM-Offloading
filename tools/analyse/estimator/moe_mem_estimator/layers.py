@@ -85,7 +85,7 @@ class LanguageModelEmbedding(MemEstimator):
 
         self.embedding_dropout = Dropout(self.config.hidden_dropout)
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = self.word_embeddings.num_parameter()
         ret += self.embedding_dropout.num_parameter()
         return ret
@@ -131,7 +131,7 @@ class VocabParallelEmbedding(MemEstimator):
         self.deterministic_mode = config.deterministic_mode
         self.weight = (self.num_embeddings_per_partition, self.embedding_dim)
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return self.weight[0] * self.weight[1]
 
     def num_activation(self, input_shape: list[int]):
@@ -146,7 +146,7 @@ class Dropout(MemEstimator):
         super().__init__()
         self.p = p
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return 0
 
     def num_activation(self, input_shape: list[int]):
@@ -238,7 +238,7 @@ class ColumnParallelLinear(MemEstimator):
         )
         self.gradient_accumulation_fusion = config.gradient_accumulation_fusion
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = cum_mul(self.weight)
         if self.bias is not None:
             ret += self.bias[0]
@@ -307,7 +307,7 @@ class RowParallelLinear(MemEstimator):
         else:
             self.bias = None
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = cum_mul(self.weight)
         if self.bias is not None:
             ret += self.bias[0]
@@ -326,7 +326,7 @@ class RMSNorm(MemEstimator):
         super().__init__()
         self.weight = hidden_size
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return self.weight
 
     def num_activation(self, input_shape: list[int]):
@@ -340,7 +340,7 @@ class GetBiasDropoutAdd(MemEstimator):
     def __init__(self, *args, **kwargs):
         super().__init__()
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return 0
 
     def num_activation(self, input_shape: list[int]):
@@ -401,7 +401,7 @@ class MLP(MemEstimator):
             tp_comm_buffer_name="fc2",
         )
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return self.linear_fc1.num_parameter() + self.linear_fc2.num_parameter()
 
     def num_activation(self, input_shape: list[int]):
@@ -506,7 +506,7 @@ class ModuleList(MemEstimator):
     ):
         return self.modules.__len__()
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return sum([x.num_parameter() for x in self.modules])
 
     def num_activation(self, input_shape: list[int]):
@@ -541,7 +541,7 @@ class SequentialMLP(MemEstimator):
             expert = MLP(self.config, submodules, is_expert=True)
             self.local_experts.append(expert)
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return self.local_experts.num_parameter()
 
     def num_activation(self, input_shape: list[int], tokens_per_expert=None):
@@ -613,7 +613,7 @@ class TEGroupedMLP(MemEstimator):
         )
         # TODO if self.config.fp8:
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = self.linear_fc1.num_parameter()
         ret += self.linear_fc2.num_parameter()
         return ret
@@ -697,7 +697,7 @@ class TEGroupedLinear(MemEstimator):
         self.input_size = input_size
         self.output_size = output_size
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = self.num_gemms * self.input_size * self.output_size
         return ret
 
@@ -860,7 +860,7 @@ class TransformerBlock(MemEstimator):
         else:
             self.final_layernorm = None  # Either this or nn.Identity
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = self.layers.num_parameter()
         if self.final_layernorm is not None:
             ret += self.final_layernorm.num_parameter()
@@ -886,7 +886,7 @@ class TopKRouter(MemEstimator):
         self.routing_type = self.config.moe_router_load_balancing_type
         self.input_jitter = None
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return 0
 
     def num_activation(self, input_shape: list[int]):
@@ -955,7 +955,7 @@ class MoELayer(MemEstimator):
             # if self.shared_expert_overlap:
             #     self.token_dispatcher.set_shared_experts(self.shared_experts)
 
-    def num_parameter(self):
+    def num_parameter_(self):
         ret = self.experts.num_parameter() + self.router.num_parameter()
         if self.use_shared_expert:
             ret += self.shared_experts.num_parameter()
@@ -988,7 +988,7 @@ class MoELayer(MemEstimator):
 
 
 class IdentityOp(MemEstimator):
-    def num_parameter(self):
+    def num_parameter_(self):
         return 0
 
     def num_activation(self, input_shape: list[int]):
@@ -1009,7 +1009,7 @@ class TEDotProductAttention(MemEstimator):
         super().__init__()
         self.config = config
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return 0
 
     def num_activation(
@@ -1131,7 +1131,7 @@ class TransformerLayer(MemEstimator):
                 if not isinstance(self.mlp, MoELayer):
                     self.recompute_mlp = True
 
-    def num_parameter(self):
+    def num_parameter_(self):
         result = self.input_layernorm.num_parameter()
         result += self.self_attention.num_parameter()
         result += self.pre_cross_attn_layernorm.num_parameter()
@@ -1252,7 +1252,7 @@ class SelfAttention(MemEstimator):
             self.config.recompute_granularity == "selective"
         )
 
-    def num_parameter(self):
+    def num_parameter_(self):
         result = 0
         result += self.core_attention.num_parameter()
         result += self.linear_proj.num_parameter()
@@ -1327,7 +1327,7 @@ class Linear(MemEstimator):
         super().__init__()
         self.weight = (in_features, out_features)
 
-    def num_parameter(self):
+    def num_parameter_(self):
         return self.weight[0] * self.weight[1]
 
     def num_activation(self, input_shape: list[int]):
@@ -1491,7 +1491,7 @@ class MLASelfAttention(MemEstimator):
             self.config.recompute_granularity == "selective"
         )
 
-    def num_parameter(self):
+    def num_parameter_(self):
         result = 0
         result += self.core_attention.num_parameter()
         result += self.linear_proj.num_parameter()

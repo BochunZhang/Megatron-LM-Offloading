@@ -10,6 +10,8 @@ import os
 from contextlib import nullcontext
 from functools import partial
 from typing import List, Optional, Tuple, Union
+import sys
+import json
 
 import torch
 from megatron.core import mpu
@@ -57,6 +59,8 @@ from moe_mem_estimator.layers import MLASelfAttention, MoELayer
 torch.distributed.get_rank = lambda: 0
 torch.cuda.get_device_capability = lambda: [8]
 
+output_dir = None
+
 def estimate_from_config(config, args):
     """
     Estimate memory usage from a given config and args, instead of global state.
@@ -85,12 +89,12 @@ def estimate_from_config(config, args):
                 f"\n------------------------------[Pipeline_Parallelism_Rank={pp_rank}]------------------------------"
             )
             input_shape, rpt = report_memory_usage_one_pp_rank(
-                input_shape, args, config, pp_rank, config.pipeline_model_parallel_size
+                input_shape, args, os.path.join(output_dir, f"result.{pp_rank}.json"), config,pp_rank, config.pipeline_model_parallel_size
             )
             cli_reports.append(rpt)
     else:
         set_pipeline_model_parallel_rank(0)
-        _, rpt = report_memory_usage_one_pp_rank(input_shape, args, config)
+        _, rpt = report_memory_usage_one_pp_rank(input_shape, args, os.path.join(output_dir, f"result.{pp_rank}.json"), config)
         cli_reports.append(rpt)
 
     aggregated_reports: list[dict] = cli_reports
@@ -288,12 +292,12 @@ def report_memory_usage(args, config=None):
                 f"\n------------------------------[Pipeline_Parallelism_Rank={pp_rank}]------------------------------"
             )
             input_shape, rpt = report_memory_usage_one_pp_rank(
-                input_shape, args, config, pp_rank, config.pipeline_model_parallel_size
+                input_shape, args, os.path.join(output_dir, f"result.{pp_rank}.json"), config, pp_rank, config.pipeline_model_parallel_size
             )
             cli_reports.append(rpt)
     else:
         set_pipeline_model_parallel_rank(0)
-        _, rpt = report_memory_usage_one_pp_rank(input_shape, args, config)
+        _, rpt = report_memory_usage_one_pp_rank(input_shape, args, os.path.join(output_dir, "result.json"), config)
         cli_reports.append(rpt)
 
     # Optionally pretty print summary
@@ -305,7 +309,7 @@ def report_memory_usage(args, config=None):
 
 
 def report_memory_usage_one_pp_rank(
-    input_shape: list[int], args, config, pp_rank=0, pp_size=1
+    input_shape: list[int], args, output, config, pp_rank=0, pp_size=1
 ) -> tuple[list[int], dict]:
     print(f"{input_shape=}")
     model: list[GPTModel] = get_model(model_provider, args, config, pp_rank, pp_size)
@@ -497,10 +501,24 @@ def report_memory_usage_one_pp_rank(
         "details": None,
     }
 
+    res = {}
+    for vpp_rank, m in enumerate(model):
+        res[vpp_rank] = m.dump_info()
+    with open(output, 'w') as f:
+        json.dump(res, f, indent=2)
+    print(f"\nconfiguration saved to: {output}")
+
     return output_shape, report
 
 
 if __name__ == "__main__":
+    assert len(sys.argv) > 2
+    output_dir = sys.argv[1]
+    model_name = sys.argv[2]
+    sys.argv = [sys.argv[0]] + sys.argv[3:]
+
+    output_dir = os.path.join(output_dir, model_name)
+
     initialize_megatron(allow_no_cuda=True, skip_mpu_initialization=True)
 
     args = get_args()
