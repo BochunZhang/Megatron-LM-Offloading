@@ -499,9 +499,7 @@ class ModuleList(MemEstimator):
         return ret
 
     def append(self, m: MemEstimator):
-        idx = len(self.modules)
         self.modules.append(m)
-        m._set_name(f"layer{idx}")
 
     def __len__(
         self,
@@ -842,6 +840,8 @@ class TransformerBlock(MemEstimator):
                 for i, layer_spec in enumerate(self.submodules.layer_specs)
             ]
         )
+
+        self
 
         if self.submodules.layer_norm and self.post_process and self.post_layer_norm:
             self.final_layernorm = build_module(

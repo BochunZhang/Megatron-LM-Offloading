@@ -241,8 +241,6 @@ def get_model(
 
     # set name for each chunk
     for i, m in enumerate(model):
-        for k, v in m.modules().items():
-            print(f"{k}: {v}")
         m._set_prefix(f"gpt{'' if pp_size == 1 else f'{pp_rank}'}")
 
     return model
