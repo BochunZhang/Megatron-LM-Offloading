@@ -30,7 +30,6 @@ from megatron.core.utils import divide
 from .base import (
     MemEstimator,
     _addindent,
-    colored,
     cum_mul,
     get_expert_model_parallel_rank,
     get_expert_model_parallel_world_size,

@@ -498,8 +498,5 @@ def report_memory_usage_one_pp_rank(
 if __name__ == "__main__":
     initialize_megatron(allow_no_cuda=True, skip_mpu_initialization=True)
 
-    import ipdb
-
-    with ipdb.launch_ipdb_on_exception():
-        args = get_args()
-        report_memory_usage(args)
+    args = get_args()
+    report_memory_usage(args)
