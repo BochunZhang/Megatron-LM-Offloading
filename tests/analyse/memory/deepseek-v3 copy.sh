@@ -1,9 +1,9 @@
 #!/bin/bash
-# Script to analyze theoretical GEMM flops for DeepSeek-V3 model
 
-# =============================================================================
-# Environment Variables
-# =============================================================================
+# Script to calculate theoretical memory usage for DeepSeek-V3
+# Usage: ./deepseek-v3.sh --case <1|2> [additional options]
+
+# Environment variables
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export NVTE_FWD_LAYERNORM_SM_MARGIN=0
 export NVTE_BWD_LAYERNORM_SM_MARGIN=0
@@ -17,45 +17,36 @@ export NVTE_NORM_BWD_USE_CUDNN=1
 export PYTHONWARNINGS=ignore
 export NCCL_DEBUG=VERSION
 export NCCL_GRAPH_REGISTER=0
-
-# Local rank
-export LOCAL_RANK=0
-export LOCAL_WORLD_SIZE=4
 export TOKENIZERS_PARALLELISM=false
 
+# Local rank settings
+export LOCAL_RANK=0
+export LOCAL_WORLD_SIZE=4
+
 # Add megatron to PYTHONPATH
-export CURRENT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+export CURRENT_PATH=$(pwd)
 export PYTHONPATH=$CURRENT_PATH:$PYTHONPATH
 
-# =============================================================================
-# Default Settings
-# =============================================================================
+# Default settings
 GPUS_PER_NODE=4
 MICRO_BATCH_SIZE=1
 GLOBAL_BATCH_SIZE=64
-TRAIN_ITERS=20
-TRAIN_SAMPLES=$[$TRAIN_ITERS * $GLOBAL_BATCH_SIZE]
-TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
+TRAIN_SAMPLES=1280
 
-# DeepSeek-V3 Model Parameters
-NUM_LAYER=61
-NUM_EXPERT=256
-MOE_FREQ="([0]*[1]*58)"
-SEQ_LEN=4096
-
-# Default dispatcher (alltoall as requested)
-DISPATCHER="alltoall"
-
-# Default parallel settings
-CASE=""
+# Model architecture
 PP=1
 TP=1
-EP=32
+EP=1
+NUM_EXPERT=256
+NUM_LAYER=61
+MOE_FREQ="([0]*3+[1]*58)"
+SEQ_LEN=4096
 
-# =============================================================================
-# Argument Parsing
-# =============================================================================
-params=$(getopt -o "" --long "case:,dispatcher:,micro-batch-size:,global-batch-size:" -- "$@")
+# Default dispatcher
+DISPATCHER="alltoall"
+
+# Parse arguments
+params=$(getopt -o "" --long "case:,pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,dispatcher:" -- "$@")
 eval set -- "$params"
 
 while true; do
@@ -64,8 +55,16 @@ while true; do
             CASE="$2"
             shift 2
             ;;
-        --dispatcher)
-            DISPATCHER="$2"
+        --pp)
+            PP="$2"
+            shift 2
+            ;;
+        --tp)
+            TP="$2"
+            shift 2
+            ;;
+        --ep)
+            EP="$2"
             shift 2
             ;;
         --micro-batch-size)
@@ -74,6 +73,27 @@ while true; do
             ;;
         --global-batch-size)
             GLOBAL_BATCH_SIZE="$2"
+            TRAIN_SAMPLES=1280
+            shift 2
+            ;;
+        --num-expert)
+            NUM_EXPERT="$2"
+            shift 2
+            ;;
+        --num-layer)
+            NUM_LAYER="$2"
+            shift 2
+            ;;
+        --moe-freq)
+            MOE_FREQ="$2"
+            shift 2
+            ;;
+        --seq-length)
+            SEQ_LEN="$2"
+            shift 2
+            ;;
+        --dispatcher)
+            DISPATCHER="$2"
             shift 2
             ;;
         --)
@@ -87,9 +107,43 @@ while true; do
     esac
 done
 
-# =============================================================================
+# Handle case selection
+if [ -n "${CASE+x}" ]; then
+    case "$CASE" in
+        1)
+            # Case 1: 256 GPUs, 8 PP, 4 VPP, 32 DP, 32 EP
+            if [ -z "${WORLD_SIZE+x}" ]; then
+                WORLD_SIZE=256
+            fi
+            PP=8
+            VPP=4
+            DP=32
+            EP=32
+            ;;
+        2)
+            # Case 2: 64 GPUs, 64 DP, 32 EP
+            if [ -z "${WORLD_SIZE+x}" ]; then
+                WORLD_SIZE=64
+            fi
+            DP=64
+            EP=32
+            PP=1
+            TP=1
+            ;;
+        *)
+            echo "Error: invalid case '$CASE'. Valid options: 1, 2"
+            exit 1
+            ;;
+    esac
+else
+    # Use default WORLD_SIZE if not set
+    if [ -z "${WORLD_SIZE+x}" ]; then
+        echo "Error: either --case or WORLD_SIZE must be specified"
+        exit 1
+    fi
+fi
+
 # Validate dispatcher
-# =============================================================================
 case "$DISPATCHER" in
     deepep|hybridep|alltoall|allgather)
         ;;
@@ -99,75 +153,47 @@ case "$DISPATCHER" in
         ;;
 esac
 
-# =============================================================================
-# Configure Parallel Strategy Based on Case
-# =============================================================================
-if [ -z "$CASE" ]; then
-    echo "Error: --case parameter is required"
-    echo "Usage: $0 --case <1|2> [--dispatcher <dispatcher>] [--micro-batch-size <size>] [--global-batch-size <size>]"
-    exit 1
+# Calculate DP if not set by case
+if [ -z "${DP+x}" ]; then
+    DP=$[$WORLD_SIZE / $TP / $PP]
 fi
 
-case "$CASE" in
-    1)
-        echo "=== Case 1: 256 GPUs, PP=8, VPP=4, DP=EP=32 ==="
-        WORLD_SIZE=256
-        PP=8
-        VPP=4
-        EP=32
-        DP=32
-        ;;
-    2)
-        echo "=== Case 2: 64 GPUs, DP=64, EP=32 ==="
-        WORLD_SIZE=64
-        PP=1
-        TP=1
-        EP=32
-        DP=64
-        ;;
-    *)
-        echo "Error: invalid case '$CASE'. Valid options: 1, 2"
-        exit 1
-        ;;
-esac
-
-# Calculate derived values
+# Setup distributed environment
 NNODES=$[$WORLD_SIZE / $GPUS_PER_NODE]
 
-echo "Configuration:"
-echo "  World size: $WORLD_SIZE"
-echo "  Nodes: $NNODES"
-echo "  GPUs per node: $GPUS_PER_NODE"
-echo "  PP: $PP"
-if [ -n "$VPP" ]; then
-    echo "  VPP: $VPP"
+if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
+    # Multi-node setup
+    export MASTER_ADDR=${MASTER_ADDR:-localhost}
+    export MASTER_PORT=${MASTER_PORT:-6000}
+    export RANK=${RANK:-0}
+else
+    # Single-node setup
+    export GLOO_SOCKET_IFNAME=eth0
+    export MASTER_ADDR=localhost
+    export MASTER_PORT=6000
+    export NNODES=1
+    export RANK=0
 fi
-echo "  TP: $TP"
-echo "  EP: $EP"
-echo "  DP: $DP"
-echo "  Dispatcher: $DISPATCHER"
-echo ""
 
-# =============================================================================
-# Distributed Args
-# =============================================================================
-export GLOO_SOCKET_IFNAME=eth0
-export MASTER_ADDR=localhost
-export MASTER_PORT=6000
-export NNODES=1
-export RANK=0
+# Build output directory
+MODEL="deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP"
+OUTPUT_DIR="$CURRENT_PATH/tests/analyse/memory/output/$MODEL"
+mkdir -p $OUTPUT_DIR
 
+# Copy script to output directory
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+cp $SCRIPT_PATH $OUTPUT_DIR/
+
+# Distributed arguments
 DISTRIBUTED_ARGS=(
-    --nproc_per_node 1
-    --nnodes 1
-    --node_rank 0
-    --master_addr localhost
-    --master_port 6000
+    --nproc_per_node $GPUS_PER_NODE
+    --nnodes $NNODES
+    --node_rank $RANK
+    --master_addr $MASTER_ADDR
+    --master_port $MASTER_PORT
 )
 
-# =============================================================================
-# Model Parallel Args
-# =============================================================================
+# Model parallel arguments
 MODEL_PARALLEL_ARGS=(
     --distributed-timeout-minutes 60
     --tensor-model-parallel-size $TP
@@ -179,13 +205,7 @@ MODEL_PARALLEL_ARGS=(
     --sequence-parallel
 )
 
-if [ -n "$VPP" ]; then
-    MODEL_PARALLEL_ARGS+=("--virtual-pipeline-model-parallel-size" "$VPP")
-fi
-
-# =============================================================================
-# GPT Model Args
-# =============================================================================
+# GPT model arguments
 GPT_MODEL_ARGS=(
     --use-mcore-models
     --use-flash-attn
@@ -226,9 +246,7 @@ GPT_MODEL_ARGS=(
     --mscale-all-dim 1.0
 )
 
-# =============================================================================
-# MoE Args
-# =============================================================================
+# MoE arguments
 MOE_ARGS=(
     --num-experts $NUM_EXPERT
     --moe-layer-freq $MOE_FREQ
@@ -251,28 +269,6 @@ MOE_ARGS=(
 
 # Add dispatcher-specific arguments
 case "$DISPATCHER" in
-    deepep)
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type flex
-            --moe-flex-dispatcher-backend deepep
-            --moe-router-fusion
-            --moe-permute-fusion
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
-            --moe-router-padding-for-quantization
-        )
-        ;;
-    hybridep)
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type flex
-            --moe-flex-dispatcher-backend hybridep
-            --moe-hybridep-num-sms 32
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
-            --moe-router-fusion
-            --moe-router-padding-for-quantization
-        )
-        ;;
     alltoall)
         MOE_ARGS+=(
             --moe-token-dispatcher-type alltoall
@@ -284,6 +280,24 @@ case "$DISPATCHER" in
             --moe-token-dispatcher-type allgather
         )
         ;;
+    deepep)
+        MOE_ARGS+=(
+            --moe-token-dispatcher-type flex
+            --moe-flex-dispatcher-backend deepep
+            --moe-matmul-router-fusion
+            --moe-router-fusion
+            --moe-permute-fusion
+        )
+        ;;
+    hybridep)
+        MOE_ARGS+=(
+            --moe-token-dispatcher-type flex
+            --moe-flex-dispatcher-backend hybridep
+            --moe-hybridep-num-sms 32
+            --moe-router-fusion
+            --moe-router-padding-for-quantization
+        )
+        ;;
 esac
 
 MOE_ARGS+=(
@@ -291,14 +305,12 @@ MOE_ARGS+=(
     --overlap-param-gather
 )
 
-# =============================================================================
-# Training Args
-# =============================================================================
+# Training arguments
 TRAINING_ARGS=(
     --micro-batch-size $MICRO_BATCH_SIZE
     --global-batch-size $GLOBAL_BATCH_SIZE
     --train-samples $TRAIN_SAMPLES
-    --exit-duration-mins 220
+    --exit-duration-in-mins 220
     --no-save-optim
     --no-check-for-nan-in-loss-and-grad
     --manual-gc
@@ -317,9 +329,7 @@ TRAINING_ARGS=(
     --init-method-std 0.02
 )
 
-# =============================================================================
-# Optimizer Args
-# =============================================================================
+# Optimizer arguments
 OPTIMIZER_ARGS=(
     --use-precision-aware-optimizer
     --main-grads-dtype fp32
@@ -328,9 +338,7 @@ OPTIMIZER_ARGS=(
     --exp-avg-sq-dtype bf16
 )
 
-# =============================================================================
-# FP8 Recipe Args
-# =============================================================================
+# FP8 recipe arguments
 FP8_RECIPE_ARGS=(
     --fp8-recipe mxfp8
     --fp8-format e4m3
@@ -338,17 +346,13 @@ FP8_RECIPE_ARGS=(
     --reuse-grad-buf-for-mxfp8-param-ag
 )
 
-# =============================================================================
-# Recompute Args
-# =============================================================================
+# Recompute arguments
 RECOMPUTE_ARGS=(
     --recompute-granularity selective
     --recompute-modules moe_act mlp
 )
 
-# =============================================================================
-# Data Args (using mock data)
-# =============================================================================
+# Data arguments
 DATA_ARGS=(
     --data-cache-path ./data-cache
     --tokenizer-type HuggingFaceTokenizer
@@ -361,9 +365,7 @@ DATA_ARGS=(
     --no-create-attention-mask-in-dataloader
 )
 
-# =============================================================================
-# Logging Args
-# =============================================================================
+# Logging arguments
 LOGGING_ARGS=(
     --log-timers-to-tensorboard
     --log-memory-to-tensorboard
@@ -373,25 +375,35 @@ LOGGING_ARGS=(
     --logging-level 40
 )
 
-# =============================================================================
-# Load Args
-# =============================================================================
+# Load arguments
 LOAD_ARGS=(
     --no-load-optim
     --no-load-rng
     --auto-detect-ckpt-format
     --load None
-    --no-save
+    --save $OUTPUT_DIR/checkpoints
+    --save-interval 500
+    --dist-ckpt-strictness log_all
 )
 
-# =============================================================================
-# Run the theoretical flops calculation
-# =============================================================================
-echo "Running theoretical GEMM flops calculation..."
-echo ""
+# Print configuration
+echo "========================================="
+echo "DeepSeek-V3 Theoretical Memory Analysis"
+echo "========================================="
+echo "WORLD_SIZE: $WORLD_SIZE"
+echo "DP: $DP, TP: $TP, PP: $PP, EP: $EP"
+echo "GPUS_PER_NODE: $GPUS_PER_NODE, NNODES: $NNODES"
+echo "MICRO_BATCH_SIZE: $MICRO_BATCH_SIZE"
+echo "GLOBAL_BATCH_SIZE: $GLOBAL_BATCH_SIZE"
+echo "SEQ_LEN: $SEQ_LEN"
+echo "NUM_EXPERT: $NUM_EXPERT"
+echo "DISPATCHER: $DISPATCHER"
+echo "========================================="
 
-python3 $CURRENT_PATH/tools/report_theoretical_calculation.py \
+# Run theoretical memory analysis
+torchrun \
     ${DISTRIBUTED_ARGS[@]} \
+    $CURRENT_PATH/tools/report_theoretical_memory.py \
     ${MODEL_PARALLEL_ARGS[@]} \
     ${GPT_MODEL_ARGS[@]} \
     ${TRAINING_ARGS[@]} \
@@ -401,7 +413,10 @@ python3 $CURRENT_PATH/tools/report_theoretical_calculation.py \
     ${RECOMPUTE_ARGS[@]} \
     ${FP8_RECIPE_ARGS[@]} \
     ${OPTIMIZER_ARGS[@]} \
-    ${MOE_ARGS[@]}
+    ${MOE_ARGS[@]} \
+    2>&1 | tee $OUTPUT_DIR/memory_analysis.log
 
-echo ""
-echo "Calculation completed for case $CASE"
+echo "========================================="
+echo "Memory analysis complete!"
+echo "Results saved to: $OUTPUT_DIR"
+echo "========================================="

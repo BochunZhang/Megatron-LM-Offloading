@@ -510,8 +510,8 @@ RECOMPUTE_ARGS=(
 
 DATA_ARGS=(
 #     --data-cache-path ./data-cache 
-#     --tokenizer-type HuggingFaceTokenizer 
-#     --tokenizer-model unsloth/DeepSeek-V3 
+    --tokenizer-type HuggingFaceTokenizer 
+    --tokenizer-model unsloth/DeepSeek-V3 
 #     --mock-data 
 #     --vocab-file ./datasets/vocab.json 
 #     --merge-file ./datasets/merges.txt 
