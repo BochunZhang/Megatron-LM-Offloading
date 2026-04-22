@@ -245,7 +245,7 @@ DATA_ARGS=(
 echo "Running theoretical GEMM flops calculation..."
 echo ""
 
-python3 $CURRENT_PATH/tools/report_theoretical_calculation.py ${SCRIPT_PATH} ${MODEL_NAME} \
+python3 $CURRENT_PATH/tools/analyse/flops/report_theoretical_calculation.py ${SCRIPT_PATH} ${MODEL_NAME} \
     ${DISTRIBUTED_ARGS[@]} \
     ${MODEL_PARALLEL_ARGS[@]} \
     ${GPT_MODEL_ARGS[@]} \

@@ -6,31 +6,24 @@ a model and running training iterations on GPU(s)."""
 import json
 import os
 import sys
+import pandas as pd
 from megatron.training import get_args
 from megatron.training.initialize import initialize_megatron
 from .training import num_floating_point_operations
 
-try:
-    import pandas as pd
-    HAS_PANDAS = True
-except ImportError:
-    HAS_PANDAS = False
 
 def flops_to_tflops(flops):
     """Convert FLOPs to TFLOPs."""
     return flops / 1e12
 
+
 def flops_breakdown_to_tflops(flops_breakdown):
     """Convert FLOPs breakdown to TFLOPs."""
     return {key: flops_to_tflops(value) for key, value in flops_breakdown.items()}
 
+
 def save_to_excel(result, output_path):
     """Save result to Excel file."""
-    if not HAS_PANDAS:
-        print("Warning: pandas not installed, skipping Excel export")
-        print("Install pandas with: pip install pandas openpyxl")
-        return
-
     # Create DataFrame for config
     config_df = pd.DataFrame(list(result['config'].items()), columns=['Parameter', 'Value'])
 
@@ -141,5 +134,4 @@ if __name__ == "__main__":
     # Save to Excel file
     excel_path = os.path.join(output_dir, f"{model_name}_flops.xlsx")
     save_to_excel(result, excel_path)
-    if HAS_PANDAS:
-        print(f"TFLOPs breakdown saved to: {excel_path}")
+    print(f"TFLOPs breakdown saved to: {excel_path}")
