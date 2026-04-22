@@ -56,12 +56,12 @@ def save_to_excel(result, output_path):
 
 if __name__ == "__main__":
     # Check if output path is provided as positional argument
-    if len(sys.argv) > 1:
-        output_dir = sys.argv[1]
-    else:
-        output_dir = os.path.dirname(os.path.abspath(__file__))
+    assert len(sys.argv) > 2
+    output_dir = sys.argv[1]
+    model_name = sys.argv[2]
 
     # Create output directory if it doesn't exist
+    output_dir = os.path.join(output_dir, 'results')
     os.makedirs(output_dir, exist_ok=True)
 
     initialize_megatron(allow_no_cuda=True, skip_mpu_initialization=True)
@@ -131,13 +131,13 @@ if __name__ == "__main__":
         result['config']['moe_layer_freq'] = args.moe_layer_freq
 
     # Save to JSON file
-    json_path = os.path.join(output_dir, 'flops_breakdown.json')
+    json_path = os.path.join(output_dir, f"{model_name}_flops.json")
     with open(json_path, 'w') as f:
         json.dump(result, f, indent=2)
     print(f"\nFLOPs breakdown saved to: {json_path}")
 
     # Save to Excel file
-    excel_path = os.path.join(output_dir, 'flops_breakdown.xlsx')
+    excel_path = os.path.join(output_dir, f"{model_name}_flops.xlsx")
     save_to_excel(result, excel_path)
     if HAS_PANDAS:
         print(f"TFLOPs breakdown saved to: {excel_path}")

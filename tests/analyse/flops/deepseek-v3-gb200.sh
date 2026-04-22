@@ -25,7 +25,7 @@ export NCCL_GRAPH_REGISTER=0
 export LOCAL_RANK=0
 export LOCAL_WORLD_SIZE=4
 export TOKENIZERS_PARALLELISM=false
-export WORLD_SIZE=4
+export WORLD_SIZE=32
 
 
 # =============================================================================
@@ -40,6 +40,8 @@ export PYTHONPATH=$CURRENT_PATH:$PYTHONPATH
 # =============================================================================
 # Default Settings
 # =============================================================================
+SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MODEL_NAME="deepseek-v3"
 GPUS_PER_NODE=4
 NNODES=$[$WORLD_SIZE / $GPUS_PER_NODE]
 MICRO_BATCH_SIZE=1
@@ -49,38 +51,24 @@ TRAIN_SAMPLES=$[$TRAIN_ITERS * $GLOBAL_BATCH_SIZE]
 TIMESTEMP=$(date +%Y-%m-%d-%H-%M-%S)
 PP=1
 TP=1
-EP=4
+EP=32
 NUM_EXPERT=256
 NUM_LAYER=61
 MOE_FREQ="([0]*3+[1]*58)"
 SEQ_LEN=4096
 CASE=""
 
-# default dispatcher
-DISPATCHER="alltoall"
 
 # =============================================================================
 # Argument Parsing
 # =============================================================================
-params=$(getopt -o "" --long "case:,dispatcher:,micro-batch-size:,global-batch-size:" -- "$@")
+params=$(getopt -o "" --long "micro-batch-size:" -- "$@")
 eval set -- "$params"
 
 while true; do
     case "$1" in
-        --case)
-            CASE="$2"
-            shift 2
-            ;;
-        --dispatcher)
-            DISPATCHER="$2"
-            shift 2
-            ;;
         --micro-batch-size)
             MICRO_BATCH_SIZE="$2"
-            shift 2
-            ;;
-        --global-batch-size)
-            GLOBAL_BATCH_SIZE="$2"
             shift 2
             ;;
         --)
@@ -95,238 +83,23 @@ while true; do
 done
 
 
-# =============================================================================
-# Validate dispatcher
-# =============================================================================
-case "$DISPATCHER" in
-    deepep|hybridep|alltoall|allgather)
-        ;;
-    *)
-        echo "Error: invalid dispatcher '$DISPATCHER'. Valid options: deepep, hybridep, alltoall, allgather"
-        exit 1
-        ;;
-esac
-
-
-# =============================================================================
-# Configure Parallel Strategy Based on Case
-# =============================================================================
-if [ -z "$CASE" ]; then
-    echo "Error: --case parameter is required"
-    echo "Usage: $0 --case <1|2> [--dispatcher <dispatcher>] [--micro-batch-size <size>] [--global-batch-size <size>]"
-    exit 1
-fi
-
-case "$CASE" in
-    1)
-        echo "=== Case 1: 256 GPUs, PP=8, VPP=4, DP=EP=32 ==="
-        WORLD_SIZE=256
-        PP=8
-        VPP=4
-        EP=32
-        DP=32
-        PP_LAYOUT="Et|(tt|)*30L"
-        ;;
-    2)
-        echo "=== Case 2: 64 GPUs, DP=64, EP=32 ==="
-        WORLD_SIZE=64
-        PP=1
-        TP=1
-        EP=32
-        DP=64
-        ;;
-    # Add new test case here
-    *)
-        echo "Error: invalid case '$CASE'. Valid options: 1, 2"
-        exit 1
-        ;;
-esac
-
 # Calculate derived values
 NNODES=$[$WORLD_SIZE / $GPUS_PER_NODE]
 
-echo "Configuration:"
-echo "  World size: $WORLD_SIZE"
-echo "  Nodes: $NNODES"
-echo "  GPUs per node: $GPUS_PER_NODE"
-echo "  PP: $PP"
-if [ -n "$VPP" ]; then
-    echo "  VPP: $VPP"
-fi
-echo "  TP: $TP"
-echo "  EP: $EP"
-echo "  DP: $DP"
-echo "  Dispatcher: $DISPATCHER"
-echo ""
-
-
-# =============================================================================
-# Configure Parallel Strategy Based on Case
-# =============================================================================
-
-
-# # function to check and install deep_ep version
-# check_and_install_deep_ep() {
-#     local required_version=$1
-#     local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
-
-#     if [[ "$current_version" == "$required_version" ]]; then
-#         echo "deep_ep version matches: $current_version"
-#         return 0
-#     else
-#         echo "deep_ep version mismatch. Required: $required_version, Current: ${current_version:-not installed}"
-#         local whl_name="deep_ep-${required_version}-cp313-cp313-linux_aarch64.whl"
-
-#         echo "Searching for $whl_name in dependence directory..."
-
-#         # search in common locations
-#         for dep_dir in "dependence" "dependencies" "deps" "whls"; do
-#             if [[ -f "$CURRENT_PATH/$dep_dir/$whl_name" ]]; then
-#                 echo "Found $whl_name in $dep_dir/, installing..."
-#                 pip3 install "$CURRENT_PATH/$dep_dir/$whl_name" --force-reinstall
-#                 return $?
-#             fi
-#         done
-
-#         # also search in subdirectories
-#         found=false
-#         while IFS= read -r -d '' file; do
-#             if [[ $(basename "$file") == "$whl_name" ]]; then
-#                 echo "Found $whl_name, installing..."
-#                 pip3 install "$file" --force-reinstall
-#                 found=true
-#                 break
-#             fi
-#         done < <(find "$CURRENT_PATH" -name "$whl_name" -print0 2>/dev/null)
-
-#         if [[ "$found" == false ]]; then
-#             echo "Error: Could not find $whl_name in any subdirectory"
-#             echo "Please ensure the whl file exists in a 'dependence' directory or subdirectory"
-#             return 1
-#         fi
-#     fi
-# }
-
-# if [ -z "${WORLD_SIZE+x}" ]; then
-#     WORLD_SIZE=$LOCAL_WORLD_SIZE
-#     echo "set WORLD_SIZE: $WORLD_SIZE"
-# else
-#     WORLD_SIZE=$[$WORLD_SIZE * $LOCAL_WORLD_SIZE]
-#     echo "WORLD_SIZE: $WORLD_SIZE"
+# echo "Configuration:"
+# echo "  World size: $WORLD_SIZE"
+# echo "  Nodes: $NNODES"
+# echo "  GPUs per node: $GPUS_PER_NODE"
+# echo "  PP: $PP"
+# if [ -n "$VPP" ]; then
+#     echo "  VPP: $VPP"
 # fi
+# echo "  TP: $TP"
+# echo "  EP: $EP"
+# echo "  DP: $DP"
+# echo "  Dispatcher: $DISPATCHER"
+# echo ""
 
-
-# # args
-# params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:" -- "$@")
-# eval set -- "$params"
-
-# while true; do
-#     case "$1" in
-#         --pp)
-#             PP="$2"
-#             shift 2
-#             ;;
-#         --tp)
-#             TP="$2"
-#             shift 2
-#             ;;
-#         --ep)
-#             EP="$2"
-#             shift 2
-#             ;;
-#         --micro-batch-size)
-#             MICRO_BATCH_SIZE="$2"
-#             shift 2
-#             ;;
-#         --global-batch-size)
-#             GLOBAL_BATCH_SIZE="$2"
-#             TRAIN_SAMPLES=$[$TRAIN_ITERS * $GLOBAL_BATCH_SIZE]
-#             shift 2
-#             ;;
-#         --num-expert)
-#             NUM_EXPERT="$2"
-#             shift 2
-#             ;;
-#         --num-layer)
-#             NUM_LAYER="$2"
-#             shift 2
-#             ;;
-#         --moe-freq)
-#             MOE_FREQ="$2"
-#             shift 2
-#             ;;
-#         --seq-length)
-#             SEQ_LEN="$2"
-#             shift 2
-#             ;;
-#         --pp-layout)
-#             PP_LAYOUT="$2"
-#             shift 2
-#             ;;
-#         --dispatcher)
-#             DISPATCHER="$2"
-#             shift 2
-#             ;;
-#         --)
-#             shift
-#             break
-#             ;;
-#         *)
-#             echo "unknow parameter: $1"
-#             exit 1
-#             ;;
-#     esac
-# done
-
-# validate dispatcher
-case "$DISPATCHER" in
-    deepep|hybridep|alltoall|allgather)
-        ;;
-    *)
-        echo "Error: invalid dispatcher '$DISPATCHER'. Valid options: deepep, hybridep, alltoall, allgather"
-        exit 1
-        ;;
-esac
-
-
-# # params
-# DP=$[$WORLD_SIZE / $TP / $PP]
-
-# if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
-#     MODEL="dlc-deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP-mbs$MICRO_BATCH_SIZE-gbs$GLOBAL_BATCH_SIZE-expert$NUM_EXPERT-layer$NUM_LAYER-seq$SEQ_LEN"
-#     BASE_PATH=$CURRENT_PATH/logs-temp/$MODEL
-#     LOGS_PATH=$CURRENT_PATH/logs-temp/$MODEL/rank$RANK
-# else
-#     export GLOO_SOCKET_IFNAME=eth0
-#     export MASTER_ADDR=localhost
-#     export MASTER_PORT=6000
-#     export NNODES=1
-#     export RANK=0
-#     MODEL="dsw-deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP-mbs$MICRO_BATCH_SIZE-gbs$GLOBAL_BATCH_SIZE-expert$NUM_EXPERT-layer$NUM_LAYER-seq$SEQ_LEN"
-#     BASE_PATH=$CURRENT_PATH/logs-temp/$MODEL
-#     LOGS_PATH=$CURRENT_PATH/logs-temp/$MODEL
-# fi
-
-# # paths
-# TENSORBOARD_PATH=$LOGS_PATH/tensorboard
-# CHECKPOINTS_PATH=$LOGS_PATH/checkpoints
-
-# rm -rf $LOGS_PATH
-# mkdir -p $TENSORBOARD_PATH
-# mkdir -p $CHECKPOINTS_PATH
-# mkdir -p ./data-cache
-
-# SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-# cp $SCRIPT_PATH $LOGS_PATH/
-
-# # args
-# DISTRIBUTED_ARGS=(
-#     --nproc_per_node $GPUS_PER_NODE 
-#     --nnodes $NNODES 
-#     --node_rank $RANK 
-#     --master_addr $MASTER_ADDR 
-#     --master_port $MASTER_PORT
-# )
 
 MODEL_PARALLEL_ARGS=(
     --distributed-timeout-minutes 60 
@@ -339,9 +112,6 @@ MODEL_PARALLEL_ARGS=(
     --sequence-parallel 
 )
 
-if [ -n "${PP_LAYOUT+x}" ]; then
-    MODEL_PARALLEL_ARGS+=("--pipeline-model-parallel-layout" "$PP_LAYOUT")
-fi
 
 GPT_MODEL_ARGS=(
     --use-mcore-models 
@@ -401,64 +171,19 @@ MOE_ARGS=(
     --moe-router-bias-update-rate 1e-3
     --moe-router-dtype fp32
     --moe-router-force-load-balancing
-)
-
-# Add dispatcher-specific arguments
-case "$DISPATCHER" in
-    deepep)
-        # deep-ep
-        # required deep_ep version: 1.2.1+9af0e0d
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type flex
-            --moe-flex-dispatcher-backend deepep
-            --moe-router-fusion
-            --moe-permute-fusion
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
-            --moe-router-padding-for-quantization
-        )
-        ;;
-    hybridep)
-        # hybrid-ep
-        # required deep_ep version: 1.2.1+3f601f7
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type flex
-            --moe-flex-dispatcher-backend hybridep
-            --moe-hybridep-num-sms 32
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
-            --moe-router-fusion
-            --moe-router-padding-for-quantization
-        )
-        ;;
-    alltoall)
-        # alltoall
-        # remove the moe_router and moe_preprocess components from
-        # the --cuda-graph-scope flag to avoid the incompatibility with MoE recompute.
-        # reference: https://asskyldst.blogspot.com/?page=en-postcsr-what-modifications-are-necessary-to-1768823879348
-        # disable --moe-router-fusion to avoid the following error:
-        # one of the variables needed for gradient computation has been modified
-        # by an inplace operation
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type alltoall
-            --moe-router-padding-for-quantization
-        )
-        ;;
-    allgather)
-        # allgather
-        # allgather and alltoall_seq dispatcher does not support moe_router_padding_for_quantization.
-        MOE_ARGS+=(
-            --moe-token-dispatcher-type allgather
-        )
-        ;;
-esac
-
-
-
-MOE_ARGS+=(
+    # deep-ep
+    # required deep_ep version: 1.2.1+9af0e0d
     --overlap-grad-reduce
     --overlap-param-gather
+    --moe-token-dispatcher-type flex
+    --moe-flex-dispatcher-backend deepep
+    --moe-router-fusion
+    --moe-permute-fusion
+    --cuda-graph-impl transformer_engine
+    --cuda-graph-scope attn moe_router moe_preprocess
+    --moe-router-padding-for-quantization
 )
+
 
 TRAINING_ARGS=(
     --micro-batch-size $MICRO_BATCH_SIZE 
@@ -509,38 +234,10 @@ RECOMPUTE_ARGS=(
 )
 
 DATA_ARGS=(
-#     --data-cache-path ./data-cache 
     --tokenizer-type HuggingFaceTokenizer 
     --tokenizer-model unsloth/DeepSeek-V3 
-#     --mock-data 
-#     --vocab-file ./datasets/vocab.json 
-#     --merge-file ./datasets/merges.txt 
-#     --split 99,1,0 
-#     --num-workers 6 
-#     --no-create-attention-mask-in-dataloader 
 )
 
-LOGGING_ARGS=(
-#     --log-timers-to-tensorboard 
-#     --log-memory-to-tensorboard 
-#     --log-validation-ppl-to-tensorboard 
-#     --log-throughput 
-#     --log-interval 1 
-#     --logging-level 40 
-#     --tensorboard-dir $TENSORBOARD_PATH 
-#     --record-memory-history 
-#     --memory-snapshot-path $BASE_PATH
-)
-
-LOAD_ARGS=(
-#     --no-load-optim 
-#     --no-load-rng 
-#     --auto-detect-ckpt-format 
-#     --load None 
-#     --save $CHECKPOINTS_PATH 
-#     --save-interval 500 
-#     --dist-ckpt-strictness log_all 
-)
 
 # =============================================================================
 # Run the theoretical flops calculation
@@ -548,13 +245,11 @@ LOAD_ARGS=(
 echo "Running theoretical GEMM flops calculation..."
 echo ""
 
-python3 $CURRENT_PATH/tools/report_theoretical_calculation.py \
+python3 $CURRENT_PATH/tools/report_theoretical_calculation.py ${SCRIPT_PATH} ${MODEL_NAME} \
     ${DISTRIBUTED_ARGS[@]} \
     ${MODEL_PARALLEL_ARGS[@]} \
     ${GPT_MODEL_ARGS[@]} \
     ${TRAINING_ARGS[@]} \
-    ${LOAD_ARGS[@]} \
-    ${LOGGING_ARGS[@]} \
     ${DATA_ARGS[@]} \
     ${RECOMPUTE_ARGS[@]} \
     ${FP8_RECIPE_ARGS[@]} \
