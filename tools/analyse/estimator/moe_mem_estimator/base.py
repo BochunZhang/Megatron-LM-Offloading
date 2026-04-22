@@ -42,7 +42,7 @@ class MemEstimator(metaclass=MetaBase):
         self.name = f"{prefix}.{self.name}" if prefix else self.name
         print(f"{self.name}")
         for key, module in self._modules.items():
-            module._set_name(self.name)
+            module._set_prefix(self.name)
 
     def __repr__(self):
         # We treat the extra repr like the sub-module, one item per line
