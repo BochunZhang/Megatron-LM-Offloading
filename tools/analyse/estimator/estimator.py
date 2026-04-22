@@ -238,6 +238,11 @@ def get_model(
 
     if not isinstance(model, list):
         model = [model]
+
+    # 为每个 VPP chunk 设置全局名称
+    for i, m in enumerate(model):
+        m._set_name(f"gpt.model{i}")
+
     return model
 
 
