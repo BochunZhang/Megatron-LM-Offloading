@@ -89,12 +89,12 @@ if __name__ == "__main__":
     flops_per_step = flops_breakdown['total']
     tflops_per_step = tflops_breakdown['total']
     tflops_per_global_batch = tflops_per_step * args.global_batch_size / args.micro_batch_size
-    print(f"TFLOPs per micro batch: {tflops_per_step:.6e}")
-    print(f"TFLOPs per global batch: {tflops_per_global_batch:.6e}")
+    print(f"TFLOPs per micro batch: {tflops_per_step:.3f}")
+    print(f"TFLOPs per global batch: {tflops_per_global_batch:.3f}")
     print("=" * 80)
     print("\nTFLOPs Breakdown:")
     for key, value in tflops_breakdown.items():
-        print(f"  {key}: {value:.6e}")
+        print(f"  {key}: {value:.3f}")
     print("=" * 80)
 
     # Prepare result dictionary for JSON output
