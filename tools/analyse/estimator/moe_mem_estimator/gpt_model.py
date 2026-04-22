@@ -45,6 +45,7 @@ class GPTModel(MemEstimator):
     ):
         super().__init__()
 
+        self.name = "model" if vp_stage is None else f"model{vp_stage}"
         self.config = config
         config.use_cpu_initialization = True
 
