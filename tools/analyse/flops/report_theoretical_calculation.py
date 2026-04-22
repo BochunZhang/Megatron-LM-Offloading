@@ -9,7 +9,7 @@ import sys
 import pandas as pd
 from megatron.training import get_args
 from megatron.training.initialize import initialize_megatron
-from .training import num_floating_point_operations
+from tools.analyse.flops.training import num_floating_point_operations
 
 
 def flops_to_tflops(flops):
