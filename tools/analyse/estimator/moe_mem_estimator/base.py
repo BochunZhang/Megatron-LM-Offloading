@@ -43,6 +43,10 @@ class MemEstimator(metaclass=MetaBase):
         print(f"{self.name}")
         for key, module in self._modules.items():
             module._set_prefix(self.name)
+        if hasattr(self, "modules"):
+            if isinstance(self.modules, list):
+                for module in self.modules:
+                    module._set_prefix(self.name)
 
     def __repr__(self):
         # We treat the extra repr like the sub-module, one item per line
