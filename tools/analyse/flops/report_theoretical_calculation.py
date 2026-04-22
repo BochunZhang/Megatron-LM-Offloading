@@ -24,10 +24,10 @@ def logs(args, configs, results, total):
     print("\nDetailed TFLOPs Breakdown:")
     for term in results:
         print(f"{term}:")
-        print(f"    layer: {results[term]['layer']:.3f}")
-        print(f"    forward: {results[term]['forward']:.3f}")
-        print(f"    backward: {results[term]['backward']:.3f}")
-        print(f"    total: {results[term]['total']:.3f}")
+        print(f"    layers: {results[term]['layers']}")
+        print(f"    forward: {results[term]['forward'] / 1e12:.3f}")
+        print(f"    backward: {results[term]['backward'] / 1e12:.3f}")
+        print(f"    total: {results[term]['total'] / 1e12:.3f}")
     print("=" * 80)
 
 
