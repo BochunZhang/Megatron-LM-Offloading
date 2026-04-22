@@ -841,7 +841,8 @@ class TransformerBlock(MemEstimator):
             ]
         )
 
-        self
+        for i, layer in enumerate(self.layers):
+            self._modules_list[f"layer{i}"] = layer
 
         if self.submodules.layer_norm and self.post_process and self.post_layer_norm:
             self.final_layernorm = build_module(
