@@ -30,16 +30,19 @@ class MetaBase(type):
 class MemEstimator(metaclass=MetaBase):
     def __init__(self, *args, **kwargs):
         self._modules = {}
-        self.name = self.__class__.__name__  # 默认名称
+        self.name = self.__class__.__name__  # default name
 
     def _set_name(self, name):
-        """设置模块及其所有子模块的层级名称"""
         self.name = name
-        # 为现有子模块递归设置名称
+
+    def _set_prefix(self, prefix):
+        """
+        prefix: parent module prefix, call resursively to set name for all sub-modules
+        """
+        self.name = f"{prefix}.{self.name}" if prefix else self.name
+        print(f"{self.name}")
         for key, module in self._modules.items():
-            child_name = f"{name}.{key}"
-            module._set_name(child_name)
-        print(f"{name}")
+            module._set_name(self.name)
 
     def __repr__(self):
         # We treat the extra repr like the sub-module, one item per line
@@ -117,9 +120,7 @@ class MemEstimator(metaclass=MetaBase):
         if isinstance(value, MemEstimator):
             modules = self.__dict__.get("_modules", {})
             modules[name] = value
-            # 自动构建子模块的名称
-            child_name = f"{self.name}.{name}"
-            value._set_name(child_name)
+            value._set_name(name)
         else:
             pass
         return super().__setattr__(name, value)

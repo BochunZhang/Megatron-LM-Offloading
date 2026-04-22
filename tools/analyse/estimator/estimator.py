@@ -167,7 +167,7 @@ def model_provider(
 
 
 def get_model(
-    model_provider_func, args, config, model_type=ModelType.encoder_or_decoder
+    model_provider_func, args, config, pp_rank, pp_size, model_type=ModelType.encoder_or_decoder
 ):
     """Build the model."""
     # args = get_args()
@@ -239,9 +239,9 @@ def get_model(
     if not isinstance(model, list):
         model = [model]
 
-    # 为每个 VPP chunk 设置全局名称
+    # set name for each chunk
     for i, m in enumerate(model):
-        m._set_name(f"gpt.model{i}")
+        m._set_name(f"gpt{'' if pp_size == 1 else f'{pp_rank}'}.model{i}")
 
     return model
 
@@ -308,7 +308,7 @@ def report_memory_usage_one_pp_rank(
     input_shape: list[int], args, config, pp_rank=0, pp_size=1
 ) -> tuple[list[int], dict]:
     print(f"{input_shape=}")
-    model: list[GPTModel] = get_model(model_provider, args, config)
+    model: list[GPTModel] = get_model(model_provider, args, config, pp_rank, pp_size)
     num_parameter_this_shard_all = 0
     num_parameter_this_shard_sparse_all = 0
     num_activation_all = 0

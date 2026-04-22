@@ -501,9 +501,7 @@ class ModuleList(MemEstimator):
     def append(self, m: MemEstimator):
         idx = len(self.modules)
         self.modules.append(m)
-        # 自动为列表中的模块添加索引名称
-        child_name = f"{self.name}.{idx}"
-        m._set_name(child_name)
+        m._set_name(f"layer{idx}")
 
     def __len__(
         self,
