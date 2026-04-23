@@ -1187,9 +1187,9 @@ class TransformerLayer(MemEstimator):
         den += self.cross_attn_bda.num_parameter()
         den += self.pre_mlp_layernorm.num_parameter()
         den += self.mlp.num_parameter()
-        if isinstance(layer.mlp, MoELayer):
-            den -= layer.mlp.num_parameter()
-            moe += layer.mlp.num_parameter()
+        if isinstance(self.mlp, MoELayer):
+            den -= self.mlp.num_parameter()
+            moe += self.mlp.num_parameter()
         ret["optim_gb"] = round((den * num_bytes_optimizer_den + moe * num_bytes_optimizer_moe) / NUM_BYTES_IN_GIGABYTE, 2)
         return ret
         
