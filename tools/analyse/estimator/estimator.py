@@ -502,8 +502,12 @@ def report_memory_usage_one_pp_rank(
     }
 
     res = {}
+    total = {"name": f"rank" if pp_size == 1 else f"pp_rank[{pp_rank}]", "n_params": 0, "n_act": 0}
     for vpp_rank, m in enumerate(model):
-        res[f"vpp_stage[{vpp_rank}]"] = m.dump_info()
+        tar = f"vpp_stage[{vpp_rank}]"
+        res[tar] = m.dump_info()
+        total["n_params"] += tar["n_params"]
+        total["n_act"] += tar["n_act"]
     with open(output, 'w') as f:
         json.dump(res, f, indent=2)
     print(f"\nconfiguration saved to: {output}")
