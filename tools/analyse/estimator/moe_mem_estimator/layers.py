@@ -1176,8 +1176,15 @@ class TransformerLayer(MemEstimator):
         NUM_BYTES_IN_MEGABYTE = 1024 * 1024
         NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
 
+        global num_bytes_parameter
+        global num_bytes_gradients
+        global num_bytes_optimizer_den
+        global num_bytes_optimizer_moe
+
         ret["param_gb"] = round(ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE, 2)
         ret["grads_gb"] = round(ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE, 2)
+
+
 
         den, moe = 0, 0
         den += self.input_layernorm.num_parameter()

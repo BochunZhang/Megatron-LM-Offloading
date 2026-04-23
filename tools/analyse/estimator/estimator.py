@@ -534,11 +534,17 @@ def report_memory_usage_one_pp_rank(
         "param_gb": round(weight_grad_memory / 3, 2),
         "grads_gb": round(weight_grad_memory / 3 * 2, 2),
         "optim_gb": round(weight_grad_optim_memory - weight_grad_memory, 2),
+        "param_gb_": 0,
+        "grads_gb_": 0,
+        "optim_gb_": 0,
     }
     for vpp_rank, m in enumerate(model):
         tar = f"vpp_stage[{vpp_rank}]"
         res[tar] = m.dump_info()
         total["n_params"] += res[tar]["n_params"]
+
+        
+
     total["stages"] = res
     with open(output, 'w') as f:
         json.dump(total, f, indent=4)
