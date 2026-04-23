@@ -120,14 +120,14 @@ class GPTModel(MemEstimator):
             ret += self.output_layer.num_parameter()
         return ret
 
-    def num_activation(self, input_shape: list[int]):
+    def num_activation(self, input_shape: list[int]):       # 这段代码忽略了 recompute 的影响
         self._inited = True
         ret = 0
 
-        self.num_act_pre = 0
-        self.num_act_post = 0
-        self.num_act_per_layer = 0
-        self.num_act_between_layers = 0
+        self.num_act_pre = 0                # Embedding 层激活量
+        self.num_act_post = 0               # Output 层激活量
+        self.num_act_per_layer = 0          # 单个 Transformer 层激活量
+        self.num_act_between_layers = 0     # 层与层之间的激活量
         self.num_layers = self.decoder.layers.modules.__len__()
 
         if self.pre_process:
@@ -156,3 +156,11 @@ class GPTModel(MemEstimator):
         if self.post_process:
             input_shape = self.output_layer.mock_forward(input_shape)
         return input_shape
+
+    def dump_info(self):
+        res = super().dump_info()
+        res["n_act_pre"] = self.num_act_pre
+        res["n_act_post"] = self.num_act_post
+        res["n_act_per_layer"] = self.num_act_per_layer
+        res["n_act_between_layers"] = self.num_act_between_layers
+        return res

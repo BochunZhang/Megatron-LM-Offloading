@@ -357,35 +357,45 @@ def report_memory_usage_one_pp_rank(
         num_parameter_this_shard_all += num_parameter_this_shard
         num_parameter_this_shard_sparse_all += num_parameter_this_shard_sparse
         # recompute
-        if config.recompute_granularity == "full":
+        # full 的计算流程有问题, 但 selective 的处理基本正确
+        if config.recompute_granularity == "full":  # 全量 recompute, 不保存 Transformer 层内部的中间激活值，只保留每一层起始处的输入
             recompute_num_layers = config.recompute_num_layers
             num_layers = one_chunk.num_layers
-            common_act = (
-                one_chunk.num_act_pre
+            common_act = (                          # 必须保存的激活值
+                one_chunk.num_act_pre               # embedding activation
                 + one_chunk.num_act_between_layers
                 * num_layers
                 * num_microbatch_this_pp_rank
             )  # recompute with pipeline parallel
             info = "With this recomputing setting, the number of activation achieve peak when "
+            # 前 recompute_num_layers Transformer recompute, 后面几层不做 recompute
+            # e.g. stage with 8x transformer, recompute_num_layers=5
+            # 前 5 层重计算, 后 3 层正常保存 activation
             if config.recompute_method == "block":
-                num_layers_with_loss = num_layers - recompute_num_layers
-                if num_layers_with_loss == 0:
-                    peak1 = common_act + one_chunk.num_act_post
-                    peak2 = common_act + one_chunk.num_act_per_layer
+                num_layers_with_loss = num_layers - recompute_num_layers    # non-recompute 的层数
+                if num_layers_with_loss == 0:                               # 全部都要重新计算
+                    peak1 = common_act + one_chunk.num_act_post             # forward 完成后还要保存 output layer 激活值 (如有)
+                    peak2 = common_act + one_chunk.num_act_per_layer        # backward 期间要还原一层的激活值
                     if peak1 > peak2:
                         info += "calculating loss"
                     else:
                         info += "back-propogating loss"
-                    num_activation = max(peak1, peak2)
+                    num_activation = max(peak1, peak2)                      # 取峰的显存值消耗
                 else:
                     info += f"calculating loss with {num_layers_with_loss} non-recompute layers"
-                    num_activation = (
+                    num_activation = (                                      # common_act 基础上还要统计 non-recompute layer 的显存需求
                         common_act
                         + one_chunk.num_act_post
                         + one_chunk.num_act_per_layer
                         * num_layers_with_loss
                         * num_microbatch_this_pp_rank
                     )
+            # 每 recompute_num_layers Transformer 保存一层的输入,
+            # e.g. stage with 8x transformer, recompute_num_layers=4
+            # 保存 layer 0 & 5 的 input, 其余 input 和 activation 全部重计算得到
+            # 这里的 common_act 的值不合理
+            # 反向传播的时候, 恢复的 activation 和 recompute_num_layers 成正比, 这里计算也有问题
+            # vpp_stage == 0 消耗的显存更大, 因为先做后面 stage 的
             elif config.recompute_method == "uniform":
                 peak1 = common_act + one_chunk.num_act_post
                 peak2 = (
@@ -401,12 +411,13 @@ def report_memory_usage_one_pp_rank(
             if len(one_chunk.decoder.layers.modules) > 0 and isinstance(
                 one_chunk.decoder.layers.modules[0].self_attention, MLASelfAttention
             ):  # MLA recompute achieve peak at backward
+                # core attention 不保存, 需要从 latent 还原出来
                 num_activation += one_chunk.decoder.layers.modules[
                     0
                 ].self_attention.core_attention.num_activation()
             print(info)
 
-        else:
+        else:   # 不考虑重计算的影响
             num_activation = (
                 num_activation - one_chunk.num_act_post
             ) * num_microbatch_this_pp_rank + one_chunk.num_act_post
@@ -431,6 +442,10 @@ def report_memory_usage_one_pp_rank(
         if not args.use_distributed_optimizer
         else 6 + (12 / args.data_parallel_size / config.context_parallel_size)
     )
+    # num_bytes_parameter = 2
+    # num_bytes_gradients = 4
+    # num_bytes_optimizer_den = 12 / args.data_parallel_size / config.context_parallel_size
+    # num_bytes_optimizer_moe = 12 / args.data_parallel_size / config.context_parallel_size
 
     if config.expert_model_parallel_size * config.expert_tensor_parallel_size > 1:
         num_bytes_per_parameter_dense = num_bytes_per_parameter
@@ -447,9 +462,14 @@ def report_memory_usage_one_pp_rank(
                     / config.expert_tensor_parallel_size
                 )
             )
+            # 计算 dep size
+            # e.g. ep = 32, dp = 64
+            # ep[0][1] 和 ep[1][1] 参数相同, ep[0][1] 和 ep[1][1] 分布式存储 optimizer
         )
         print(f"{num_bytes_per_parameter_dense=} {num_bytes_per_parameter_moe=}")
+        # 计算 weight + gradients 占用
         weight_grad_memory = num_parameter_this_shard_all * 6 / NUM_BYTES_IN_GIGABYTE
+        # 计算 optimizer 的占用时, 要单独计算 optimizer 的占用
         weight_grad_optim_memory = (
             (num_parameter_this_shard_all - num_parameter_this_shard_sparse_all)
             * num_bytes_per_parameter_dense
@@ -457,6 +477,7 @@ def report_memory_usage_one_pp_rank(
         ) / NUM_BYTES_IN_GIGABYTE
     else:
         print(f"{num_bytes_per_parameter=}")
+        # 未启用 ep, 所有参数都按照 num_bytes_per_parameter 来计算 optimizer 占用
         weight_grad_memory = num_parameter_this_shard_all * 6 / NUM_BYTES_IN_GIGABYTE
         weight_grad_optim_memory = (
             num_parameter_this_shard_all
@@ -495,15 +516,18 @@ def report_memory_usage_one_pp_rank(
     total = {
         "name": f"rank" if pp_size == 1 else f"pp_rank[{pp_rank}]", 
         "n_params": 0, 
-        "n_params_": num_parameter_this_shard_all,
         "n_params_b": num_parameter_this_shard_all / 1e9,
-        "n_act": 0,
+        "n_act": num_activation_all,
+        "n_act_b": num_activation_all / 1e9,
+        "n_inflight": num_microbatch_this_pp_rank,
+        "param_gb": round(weight_grad_memory / 3, 2),
+        "grads_gb": round(weight_grad_memory / 3 * 2, 2),
+        "optim_gb": round(weight_grad_optim_memory - weight_grad_memory, 2),
     }
     for vpp_rank, m in enumerate(model):
         tar = f"vpp_stage[{vpp_rank}]"
         res[tar] = m.dump_info()
         total["n_params"] += res[tar]["n_params"]
-        total["n_act"] += res[tar]["n_act"]
     total["stages"] = res
     with open(output, 'w') as f:
         json.dump(total, f, indent=4)
