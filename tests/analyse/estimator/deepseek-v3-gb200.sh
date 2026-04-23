@@ -134,7 +134,7 @@ case "$CASE" in
         WORLD_SIZE=64
         PP=1
         TP=1
-        EP=32
+        EP=64
         DP=64
         ;;
     # Add new test case here
