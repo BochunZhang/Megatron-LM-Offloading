@@ -40,6 +40,8 @@ export PYTHONPATH=$CURRENT_PATH:$PYTHONPATH
 # =============================================================================
 # Default Settings
 # =============================================================================
+SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MODEL_NAME="deepseek-v3"
 GPUS_PER_NODE=4
 NNODES=$[$WORLD_SIZE / $GPUS_PER_NODE]
 MICRO_BATCH_SIZE=1
@@ -362,7 +364,7 @@ DATA_ARGS=(
 echo "Running theoretical GEMM flops calculation..."
 echo ""
 
-python3 $CURRENT_PATH/tools/analyse/estimator/estimator.py \
+python3 $CURRENT_PATH/tools/analyse/estimator/estimator.py ${SCRIPT_PATH} ${MODEL_NAME}/case${CASE} \
     ${DISTRIBUTED_ARGS[@]} \
     ${MODEL_PARALLEL_ARGS[@]} \
     ${GPT_MODEL_ARGS[@]} \
