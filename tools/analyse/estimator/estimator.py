@@ -57,6 +57,8 @@ from moe_mem_estimator.gpt_model import GPTModel
 from moe_mem_estimator.layers import MLASelfAttention, MoELayer
 from moe_mem_estimator.layers import num_bytes_parameter, num_bytes_gradients, num_bytes_optimizer_den, num_bytes_optimizer_moe
 
+import moe_mem_estimator.layers as estimator_layers
+
 torch.distributed.get_rank = lambda: 0
 torch.cuda.get_device_capability = lambda: [8]
 
@@ -444,15 +446,11 @@ def report_memory_usage_one_pp_rank(
         else 6 + (12 / args.data_parallel_size / config.context_parallel_size)
     )
 
-    global num_bytes_parameter
-    global num_bytes_gradients
-    global num_bytes_optimizer_den
-    global num_bytes_optimizer_moe
-    
-    num_bytes_parameter = 2
-    num_bytes_gradients = 4
-    num_bytes_optimizer_den = 12 / args.data_parallel_size / config.context_parallel_size
-    num_bytes_optimizer_moe = 12 / (args.world_size
+   
+    estimator_layers.num_bytes_parameter = 2
+    estimator_layers.num_bytes_gradients = 4
+    estimator_layers.num_bytes_optimizer_den = 12 / args.data_parallel_size / config.context_parallel_size
+    estimator_layers.num_bytes_optimizer_moe = 12 / (args.world_size
                     / config.pipeline_model_parallel_size
                     / config.expert_model_parallel_size
                     / config.expert_tensor_parallel_size
