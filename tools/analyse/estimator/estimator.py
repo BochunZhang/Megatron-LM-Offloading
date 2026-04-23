@@ -503,7 +503,7 @@ def report_memory_usage_one_pp_rank(
 
     res = {}
     for vpp_rank, m in enumerate(model):
-        res[vpp_rank] = m.dump_info()
+        res[f"vpp_stage[{vpp_rank}]"] = m.dump_info()
     with open(output, 'w') as f:
         json.dump(res, f, indent=2)
     print(f"\nconfiguration saved to: {output}")
