@@ -313,8 +313,8 @@ def report_memory_usage_one_pp_rank(
 ) -> tuple[list[int], dict]:
     print(f"{input_shape=}")
     model: list[GPTModel] = get_model(model_provider, args, config, pp_rank, pp_size)
-    num_parameter_this_shard_all = 0
-    num_parameter_this_shard_sparse_all = 0
+    num_parameter_this_shard_all = 0            # 总参数量
+    num_parameter_this_shard_sparse_all = 0     # MoE专家参数
     num_activation_all = 0
     output_shape = input_shape
     for vpp_rank, one_chunk in enumerate(model):
@@ -331,11 +331,11 @@ def report_memory_usage_one_pp_rank(
                     and layer.mlp.shared_experts is not None
                 ):
                     num_parameter_this_shard_sparse -= (
-                        layer.mlp.shared_experts.num_parameter()
+                        layer.mlp.shared_experts.num_parameter()    # 去掉共享专家的参数量
                     )
         num_activation_this_shard_mlp = sum(
             [m.mlp.num_activation() for m in one_chunk.decoder.layers.modules]
-        )
+        )   # 计算 mlp 层的 activation
         if len(model) > 1:
             if vpp_rank >= 1 and vpp_rank < len(model) - 1:
                 num_microbatch_this_pp_rank = pp_size
@@ -347,18 +347,6 @@ def report_memory_usage_one_pp_rank(
                 num_microbatch_this_pp_rank = min((pp_size - pp_rank) * 2 + 1, pp_size)
         else:
             num_microbatch_this_pp_rank = pp_size - pp_rank
-
-        num_parameter_this_shard_sparse = 0
-        for layer in one_chunk.decoder.layers.modules:
-            if isinstance(layer.mlp, MoELayer):
-                num_parameter_this_shard_sparse += layer.mlp.num_parameter()
-                if (
-                    "shared_experts" in layer.mlp.__dir__()
-                    and layer.mlp.shared_experts is not None
-                ):
-                    num_parameter_this_shard_sparse -= (
-                        layer.mlp.shared_experts.num_parameter()
-                    )
 
         one_chunk.__repr__()
         # print(one_chunk)
@@ -437,11 +425,13 @@ def report_memory_usage_one_pp_rank(
                 f", {num_microbatch_this_pp_rank=} {vpp_rank=}"
             )
         num_activation_all += num_activation
+    
     num_bytes_per_parameter = (
         18
         if not args.use_distributed_optimizer
         else 6 + (12 / args.data_parallel_size / config.context_parallel_size)
     )
+
     if config.expert_model_parallel_size * config.expert_tensor_parallel_size > 1:
         num_bytes_per_parameter_dense = num_bytes_per_parameter
         num_bytes_per_parameter_moe = (
@@ -505,13 +495,16 @@ def report_memory_usage_one_pp_rank(
     total = {
         "name": f"rank" if pp_size == 1 else f"pp_rank[{pp_rank}]", 
         "n_params": 0, 
-        "n_act": 0
+        "n_params_": num_parameter_this_shard_all,
+        "n_params_b": num_parameter_this_shard_all / 1e9,
+        "n_act": 0,
     }
     for vpp_rank, m in enumerate(model):
         tar = f"vpp_stage[{vpp_rank}]"
         res[tar] = m.dump_info()
         total["n_params"] += res[tar]["n_params"]
         total["n_act"] += res[tar]["n_act"]
+    
     with open(output, 'w') as f:
         json.dump(res, f, indent=2)
     print(f"\nconfiguration saved to: {output}")

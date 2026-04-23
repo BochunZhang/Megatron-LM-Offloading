@@ -42,7 +42,7 @@ class MemEstimator(metaclass=MetaBase):
         prefix: parent module prefix, call resursively to set name for all sub-modules
         """
         self.name = f"{prefix}.{self.name}" if prefix else self.name
-        print(f"{self.name}")
+        # print(f"{self.name}")
         for module in self._modules_list:
             module._set_prefix(self.name)
 
