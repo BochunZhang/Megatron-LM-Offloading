@@ -4,6 +4,10 @@ from abc import ABC
 from megatron.core.transformer.transformer_config import TransformerConfig
 from torch.nn.modules.module import _addindent
 
+num_bytes_parameter = 0
+num_bytes_gradients = 0
+num_bytes_optimizer_den = 0
+num_bytes_optimizer_moe = 0
 
 def prehook_save_input_shape(func):
     def wrapper(self, *input_shapes, **kw_input_shapes):
@@ -111,11 +115,32 @@ class MemEstimator(metaclass=MetaBase):
         ret["type"] = self.__class__.__name__
         ret["n_params"] = self.num_parameter()
         ret["n_act"] = self.num_activation()
+        ret["param_gb"] = 0
+        ret["grads_gb"] = 0
+        ret["optim_gb"] = 0
+
         sub = []
         for module in self._modules_list:
             sub.append(module.dump_info())
 
-        param_gb, grads_gb, optim_gb = 0, 0, 0
+        global num_bytes_parameter
+        global num_bytes_gradients
+        global num_bytes_optimizer_den
+        global num_bytes_optimizer_moe
+
+        NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
+
+        if len(sub) > 0:
+            ret["submodules"] = sub
+            for m in sub:
+                ret["param_gb"] += m["param_gb"]
+                ret["grads_gb"] += m["grads_gb"]
+                ret["optim_gb"] += m["optim_gb"]
+        else:
+            ret["param_gb"] = self.num_parameter() * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE
+            ret["grads_gb"] = self.num_parameter() * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE
+            ret["optim_gb"] = self.num_parameter() * num_bytes_optimizer_den / NUM_BYTES_IN_GIGABYTE
+
         for m in sub:
             if "param_gb" in m.keys():
                 param_gb += m["param_gb"]

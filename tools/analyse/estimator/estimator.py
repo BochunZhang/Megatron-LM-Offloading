@@ -57,7 +57,7 @@ from moe_mem_estimator.gpt_model import GPTModel
 from moe_mem_estimator.layers import MLASelfAttention, MoELayer
 from moe_mem_estimator.layers import num_bytes_parameter, num_bytes_gradients, num_bytes_optimizer_den, num_bytes_optimizer_moe
 
-import moe_mem_estimator.layers as estimator_layers
+import moe_mem_estimator.base as estimator_base
 
 torch.distributed.get_rank = lambda: 0
 torch.cuda.get_device_capability = lambda: [8]
@@ -336,6 +336,13 @@ def report_memory_usage_one_pp_rank(
                     num_parameter_this_shard_sparse -= (
                         layer.mlp.shared_experts.num_parameter()    # 去掉共享专家的参数量
                     )
+                if (
+                    "router" in layer.mlp.__dir__()
+                    and layer.mlp.router is not None
+                ):
+                    num_parameter_this_shard_sparse -= (
+                        layer.mlp.router.num_parameter()    # 去掉 router 的参数量, 其副本数量和 DP 规模相等
+                    )
         num_activation_this_shard_mlp = sum(
             [m.mlp.num_activation() for m in one_chunk.decoder.layers.modules]
         )   # 计算 mlp 层的 activation
@@ -447,10 +454,10 @@ def report_memory_usage_one_pp_rank(
     )
 
    
-    estimator_layers.num_bytes_parameter = 2
-    estimator_layers.num_bytes_gradients = 4
-    estimator_layers.num_bytes_optimizer_den = 12 / args.data_parallel_size / config.context_parallel_size
-    estimator_layers.num_bytes_optimizer_moe = 12 / (args.world_size
+    estimator_base.num_bytes_parameter = 2
+    estimator_base.num_bytes_gradients = 4
+    estimator_base.num_bytes_optimizer_den = 12 / args.data_parallel_size / config.context_parallel_size
+    estimator_base.num_bytes_optimizer_moe = 12 / (args.world_size
                     / config.pipeline_model_parallel_size
                     / config.expert_model_parallel_size
                     / config.expert_tensor_parallel_size

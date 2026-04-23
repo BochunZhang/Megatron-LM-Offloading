@@ -44,11 +44,7 @@ from .base import (
     set_global_config,
 )
 
-
-num_bytes_parameter = 0
-num_bytes_gradients = 0
-num_bytes_optimizer_den = 0
-num_bytes_optimizer_moe = 0
+import moe_mem_estimator.base as estimator_base
 
 
 class LanguageModelEmbedding(MemEstimator):
@@ -645,6 +641,12 @@ class TEGroupedMLP(MemEstimator):
         input_shape = self.local_experts.modules[0].mock_forward(input_shape)
         return input_shape
 
+    def dump_info(self):
+        ret = super().dump_info()
+
+        # optimizer 分布存储, 其 dp 比例时 DP / EP
+        NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
+        ret["optim_gb"] = self.num_parameter() * estimator_base.num_bytes_optimizer_moe / NUM_BYTES_IN_GIGABYTE
 
 class TEGroupedLinear(MemEstimator):
     def __init__(
@@ -1169,35 +1171,6 @@ class TransformerLayer(MemEstimator):
 
     def mock_forward(self, input_shape: list[int]):
         return input_shape
-    
-    def dump_info(self):
-        ret = super().dump_info()
-
-        NUM_BYTES_IN_MEGABYTE = 1024 * 1024
-        NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
-
-        global num_bytes_parameter
-        global num_bytes_gradients
-        global num_bytes_optimizer_den
-        global num_bytes_optimizer_moe
-
-        ret["param_gb"] = ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE
-        ret["grads_gb"] = ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE
-
-        den, moe = 0, 0
-        den += self.input_layernorm.num_parameter()
-        den += self.self_attention.num_parameter()
-        den += self.pre_cross_attn_layernorm.num_parameter()
-        den += self.cross_attention.num_parameter()
-        den += self.cross_attn_bda.num_parameter()
-        den += self.pre_mlp_layernorm.num_parameter()
-        den += self.mlp.num_parameter()
-        if isinstance(self.mlp, MoELayer):
-            den -= self.mlp.num_parameter()
-            moe += self.mlp.num_parameter()
-        ret["optim_gb"] = (den * num_bytes_optimizer_den + moe * num_bytes_optimizer_moe) / NUM_BYTES_IN_GIGABYTE
-        return ret
-        
 
 
 class SelfAttention(MemEstimator):
