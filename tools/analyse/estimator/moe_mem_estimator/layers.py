@@ -623,10 +623,10 @@ class TEGroupedMLP(MemEstimator):
     def num_activation(self, input_shape: list[int], tokens_per_expert=None):
         ret = 0
 
-        ret += self.linear_fc1.num_activation(input_shape)
-        
         input_shape = deepcopy(input_shape)
         input_shape[1] //= self.num_local_experts  # 外面已经 x topK 了, 这里应该均分给每个 expert, 但内部是完整的一个矩阵, 因此只能均分
+
+        ret += self.linear_fc1.num_activation(input_shape)
         input_shape = self.linear_fc1.mock_forward(input_shape)
         
 
