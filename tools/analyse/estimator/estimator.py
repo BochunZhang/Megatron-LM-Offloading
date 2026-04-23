@@ -529,9 +529,9 @@ def report_memory_usage_one_pp_rank(
         "n_act": num_activation_all,
         "n_act_b": num_activation_all / 1e9,
         "n_inflight": num_microbatch_this_pp_rank,
-        "param_gb": round(weight_grad_memory / 3, 2),
-        "grads_gb": round(weight_grad_memory / 3 * 2, 2),
-        "optim_gb": round(weight_grad_optim_memory - weight_grad_memory, 2),
+        "param_gb": weight_grad_memory / 3,
+        "grads_gb": weight_grad_memory / 3 * 2,
+        "optim_gb": weight_grad_optim_memory - weight_grad_memory,
         "param_gb_": 0,
         "grads_gb_": 0,
         "optim_gb_": 0,
@@ -540,6 +540,9 @@ def report_memory_usage_one_pp_rank(
         tar = f"vpp_stage[{vpp_rank}]"
         res[tar] = m.dump_info()
         total["n_params"] += res[tar]["n_params"]
+        total["param_gb_"] += res[tar]["param_gb"]
+        total["grads_gb_"] += res[tar]["grads_gb"]
+        total["optim_gb_"] += res[tar]["optim_gb"]
 
         
 

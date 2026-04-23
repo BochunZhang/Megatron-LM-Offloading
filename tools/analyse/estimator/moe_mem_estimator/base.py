@@ -124,11 +124,11 @@ class MemEstimator(metaclass=MetaBase):
             if "optim_gb" in m.keys():
                 optim_gb += m["optim_gb"]
         if param_gb > 0:
-            ret["param_gb"] = round(param_gb, 2)
+            ret["param_gb"] = param_gb
         if grads_gb > 0:
-            ret["grads_gb"] = round(grads_gb, 2)
+            ret["grads_gb"] = grads_gb
         if optim_gb > 0:
-            ret["optim_gb"] = round(optim_gb, 2)
+            ret["optim_gb"] = optim_gb
 
         if len(sub) > 0:
             ret["submodules"] = sub

@@ -1181,8 +1181,8 @@ class TransformerLayer(MemEstimator):
         global num_bytes_optimizer_den
         global num_bytes_optimizer_moe
 
-        ret["param_gb"] = round(ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE, 2)
-        ret["grads_gb"] = round(ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE, 2)
+        ret["param_gb"] = ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE
+        ret["grads_gb"] = ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE
 
         den, moe = 0, 0
         den += self.input_layernorm.num_parameter()
@@ -1195,7 +1195,7 @@ class TransformerLayer(MemEstimator):
         if isinstance(self.mlp, MoELayer):
             den -= self.mlp.num_parameter()
             moe += self.mlp.num_parameter()
-        ret["optim_gb"] = round((den * num_bytes_optimizer_den + moe * num_bytes_optimizer_moe) / NUM_BYTES_IN_GIGABYTE, 2)
+        ret["optim_gb"] = (den * num_bytes_optimizer_den + moe * num_bytes_optimizer_moe) / NUM_BYTES_IN_GIGABYTE
         return ret
         
 
