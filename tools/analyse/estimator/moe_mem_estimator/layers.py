@@ -1184,8 +1184,6 @@ class TransformerLayer(MemEstimator):
         ret["param_gb"] = round(ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE, 2)
         ret["grads_gb"] = round(ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE, 2)
 
-
-
         den, moe = 0, 0
         den += self.input_layernorm.num_parameter()
         den += self.self_attention.num_parameter()
