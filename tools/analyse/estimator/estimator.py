@@ -518,6 +518,7 @@ if __name__ == "__main__":
     sys.argv = [sys.argv[0]] + sys.argv[3:]
 
     output_dir = os.path.join(output_dir, model_name)
+    os.makedirs(output_dir, exist_ok=True)
 
     initialize_megatron(allow_no_cuda=True, skip_mpu_initialization=True)
 
