@@ -131,18 +131,19 @@ class MemEstimator(metaclass=MetaBase):
         NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
 
         if len(sub) > 0:
-            ret["submodules"] = sub
+            ret["param_gb"] = 0
+            ret["grads_gb"] = 0
+            ret["optim_gb"] = 0
             for m in sub:
                 ret["param_gb"] += m["param_gb"]
                 ret["grads_gb"] += m["grads_gb"]
                 ret["optim_gb"] += m["optim_gb"]
+            ret["submodules"] = sub
         else:
             ret["param_gb"] = self.num_parameter() * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE
             ret["grads_gb"] = self.num_parameter() * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE
             ret["optim_gb"] = self.num_parameter() * num_bytes_optimizer_den / NUM_BYTES_IN_GIGABYTE
 
-        if len(sub) > 0:
-            ret["submodules"] = sub
         return ret
 
     def num_activation(self, input_shape: list[int]):
