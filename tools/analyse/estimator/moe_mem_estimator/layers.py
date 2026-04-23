@@ -637,8 +637,10 @@ class TEGroupedMLP(MemEstimator):
         return ret
 
     def mock_forward(self, input_shape: list[int], tokens_per_expert=None):
-        # assume all the inputs are routed to the first expert
-        input_shape = self.local_experts.modules[0].mock_forward(input_shape)
+        # TEGroupedMLP 使用 grouped linear，通过 fc1 -> activation -> fc2
+        input_shape = self.linear_fc1.mock_forward(input_shape)
+        input_shape[-1] //= 2  # SwiLU 只用一半
+        input_shape = self.linear_fc2.mock_forward(input_shape)
         return input_shape
 
     def dump_info(self):
