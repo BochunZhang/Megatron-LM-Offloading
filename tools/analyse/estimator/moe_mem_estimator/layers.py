@@ -45,6 +45,12 @@ from .base import (
 )
 
 
+num_bytes_parameter = 0
+num_bytes_gradients = 0
+num_bytes_optimizer_den = 0
+num_bytes_optimizer_moe = 0
+
+
 class LanguageModelEmbedding(MemEstimator):
     def __init__(
         self,
@@ -1163,6 +1169,30 @@ class TransformerLayer(MemEstimator):
 
     def mock_forward(self, input_shape: list[int]):
         return input_shape
+    
+    def dump_info(self):
+        ret = super().dump_info()
+
+        NUM_BYTES_IN_MEGABYTE = 1024 * 1024
+        NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
+
+        ret["param_gb"] = round(ret["n_params"] * num_bytes_parameter / NUM_BYTES_IN_GIGABYTE, 2)
+        ret["grads_gb"] = round(ret["n_params"] * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE, 2)
+
+        den, moe = 0, 0
+        den += self.input_layernorm.num_parameter()
+        den += self.self_attention.num_parameter()
+        den += self.pre_cross_attn_layernorm.num_parameter()
+        den += self.cross_attention.num_parameter()
+        den += self.cross_attn_bda.num_parameter()
+        den += self.pre_mlp_layernorm.num_parameter()
+        den += self.mlp.num_parameter()
+        if isinstance(layer.mlp, MoELayer):
+            den -= layer.mlp.num_parameter()
+            moe += layer.mlp.num_parameter()
+        ret["optim_gb"] = round((den * num_bytes_optimizer_den + moe * num_bytes_optimizer_moe) / NUM_BYTES_IN_GIGABYTE, 2)
+        return ret
+        
 
 
 class SelfAttention(MemEstimator):

@@ -114,6 +114,22 @@ class MemEstimator(metaclass=MetaBase):
         sub = []
         for module in self._modules_list:
             sub.append(module.dump_info())
+
+        param_gb, grads_gb, optim_gb = 0, 0, 0
+        for m in sub:
+            if "param_gb" in ret.keys():
+                param_gb += m["param_gb"]
+            if "grads_gb" in ret.keys():
+                grads_gb += m["grads_gb"]
+            if "optim_gb" in ret.keys():
+                optim_gb += m["optim_gb"]
+        if param_gb > 0:
+            ret["param_gb"] = round(param_gb, 2)
+        if grads_gb > 0:
+            ret["grads_gb"] = round(grads_gb, 2)
+        if optim_gb > 0:
+            ret["optim_gb"] = round(optim_gb, 2)
+
         if len(sub) > 0:
             ret["submodules"] = sub
         return ret
