@@ -647,7 +647,7 @@ class TEGroupedMLP(MemEstimator):
         # optimizer 分布存储, 其 dp 比例时 DP / EP
         NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
         ret["optim_gb"] = self.num_parameter() * estimator_base.num_bytes_optimizer_moe / NUM_BYTES_IN_GIGABYTE
-
+        ret["bytes_per_param"] = estimator_base.num_bytes_optimizer_moe
 class TEGroupedLinear(MemEstimator):
     def __init__(
         self,

@@ -141,20 +141,6 @@ class MemEstimator(metaclass=MetaBase):
             ret["grads_gb"] = self.num_parameter() * num_bytes_gradients / NUM_BYTES_IN_GIGABYTE
             ret["optim_gb"] = self.num_parameter() * num_bytes_optimizer_den / NUM_BYTES_IN_GIGABYTE
 
-        for m in sub:
-            if "param_gb" in m.keys():
-                param_gb += m["param_gb"]
-            if "grads_gb" in m.keys():
-                grads_gb += m["grads_gb"]
-            if "optim_gb" in m.keys():
-                optim_gb += m["optim_gb"]
-        if param_gb > 0:
-            ret["param_gb"] = param_gb
-        if grads_gb > 0:
-            ret["grads_gb"] = grads_gb
-        if optim_gb > 0:
-            ret["optim_gb"] = optim_gb
-
         if len(sub) > 0:
             ret["submodules"] = sub
         return ret
