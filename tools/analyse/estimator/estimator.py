@@ -55,7 +55,6 @@ from moe_mem_estimator.base import (
 )
 from moe_mem_estimator.gpt_model import GPTModel
 from moe_mem_estimator.layers import MLASelfAttention, MoELayer
-from moe_mem_estimator.layers import num_bytes_parameter, num_bytes_gradients, num_bytes_optimizer_den, num_bytes_optimizer_moe
 
 import moe_mem_estimator.base as estimator_base
 
