@@ -623,26 +623,18 @@ class TEGroupedMLP(MemEstimator):
     def num_activation(self, input_shape: list[int], tokens_per_expert=None):
         ret = 0
 
-        # 计算每个 expert 处理的 token 数量
-        # input_shape[1] = batch_size * topk (经过 MoELayer 调整后)
-        # 假设 token 均匀路由到各个专家
-        tokens_per_expert = input_shape[1] / self.num_local_experts
-        tokens_per_expert_shape = [input_shape[0], tokens_per_expert, input_shape[2]]
+        ret += self.linear_fc1.num_activation(input_shape)
+        input_shape = self.linear_fc1.mock_forward(input_shape)
 
-        # fc1: 每个 expert 的输出激活，然后乘以 expert 数量
-        ret += self.linear_fc1.num_activation(tokens_per_expert_shape) * self.num_local_experts
+        input_shape
 
-        # 计算 fc1 后的形状 (每个 expert)
-        expert_output_shape = self.linear_fc1.mock_forward(tokens_per_expert_shape)
-
-        # activation: SwiLU 只用一半，除以 2
+        # activation
         if not self.activation_recompute:
-            ret += cum_mul(expert_output_shape) / 2 * self.num_local_experts
+            ret += cum_mul(input_shape) / 2  # swiglu or gelu
+        input_shape = deepcopy(input_shape)
+        input_shape[-1] //= 2
 
-        # fc2: 每个 expert 的输出激活
-        fc2_input_shape = [expert_output_shape[0], expert_output_shape[1], expert_output_shape[2] // 2]
-        ret += self.linear_fc2.num_activation(fc2_input_shape) * self.num_local_experts
-
+        self.linear_fc2.num_activation(input_shape)
         return ret
 
     def mock_forward(self, input_shape: list[int], tokens_per_expert=None):
@@ -729,6 +721,13 @@ class TEGroupedLinear(MemEstimator):
 
     def mock_forward(self, input_shape: list[int], tokens_per_expert=None):
         return input_shape[:-1] + [self.output_size]
+    
+    def dump_info(self):
+        ret = super().dump_info()
+        ret['num_gemms'] = self.num_gemms
+        ret['input_size'] = self.input_size
+        ret['output_size'] = self.output_size
+        return ret
 
 
 class TEColumnParallelGroupedLinear(TEGroupedLinear):
