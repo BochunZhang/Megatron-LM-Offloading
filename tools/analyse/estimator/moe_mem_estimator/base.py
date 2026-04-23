@@ -118,6 +118,7 @@ class MemEstimator(metaclass=MetaBase):
         ret["param_gb"] = 0
         ret["grads_gb"] = 0
         ret["optim_gb"] = 0
+        ret['input'] = self._input_shape
 
         sub = []
         for module in self._modules_list:
