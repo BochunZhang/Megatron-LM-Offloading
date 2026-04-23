@@ -574,3 +574,9 @@ if __name__ == "__main__":
 
     args = get_args()
     report_memory_usage(args)
+
+# 修改说明
+# 1. TEGroupedMLP: moe_act recompute 只忽略激活函数产生的 activate, 错误的没有统计 fc1 的激活值, 已补全
+# 2. TEGroupedMLP: 没有使用 fc2 的激活值, 已补全
+# 3. TEGroupedMLP: 没有将 token 均分给 expert, 导致结果偏大
+
