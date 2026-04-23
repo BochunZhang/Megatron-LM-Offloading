@@ -648,6 +648,8 @@ class TEGroupedMLP(MemEstimator):
         NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
         ret["optim_gb"] = self.num_parameter() * estimator_base.num_bytes_optimizer_moe / NUM_BYTES_IN_GIGABYTE
         ret["bytes_per_param"] = estimator_base.num_bytes_optimizer_moe
+        return ret
+
 class TEGroupedLinear(MemEstimator):
     def __init__(
         self,

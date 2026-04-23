@@ -131,9 +131,6 @@ class MemEstimator(metaclass=MetaBase):
         NUM_BYTES_IN_GIGABYTE = 1024 * 1024 * 1024
 
         if len(sub) > 0:
-            ret["param_gb"] = 0
-            ret["grads_gb"] = 0
-            ret["optim_gb"] = 0
             for m in sub:
                 ret["param_gb"] += m["param_gb"]
                 ret["grads_gb"] += m["grads_gb"]
