@@ -82,7 +82,6 @@ class MemEstimator(metaclass=MetaBase):
     def dump(self):
         ret = {}
         ret["name"] = self._get_name()
-        ret["type"] = self.__class__.__name__
         ret["n_params"] = self.num_parameter()
         ret["n_act"] = self.num_activation()
         modules = {}
@@ -109,7 +108,9 @@ class MemEstimator(metaclass=MetaBase):
     def dump_info(self):
         ret = {}
         ret["name"] = self.name
+        ret["type"] = self.__class__.__name__
         ret["n_params"] = self.num_parameter()
+        ret["n_act"] = self.num_activation()
         sub = []
         for module in self._modules_list:
             sub.append(module.dump_info())
