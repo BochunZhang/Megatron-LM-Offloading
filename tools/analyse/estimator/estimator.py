@@ -504,7 +504,7 @@ def report_memory_usage_one_pp_rank(
         res[tar] = m.dump_info()
         total["n_params"] += res[tar]["n_params"]
         total["n_act"] += res[tar]["n_act"]
-    
+    total["stages"] = res
     with open(output, 'w') as f:
         json.dump(total, f, indent=4)
     print(f"\nconfiguration saved to: {output}")
