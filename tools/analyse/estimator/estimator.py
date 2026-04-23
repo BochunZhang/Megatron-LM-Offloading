@@ -321,7 +321,7 @@ def report_memory_usage_one_pp_rank(
     output_shape = input_shape
     for vpp_rank, one_chunk in enumerate(model):
         num_parameter_this_shard = one_chunk.num_parameter()
-        num_activation = one_chunk.num_activation(output_shape)
+        num_activation = one_chunk.num_activation(output_shape)     # 计算激活值
         output_shape = one_chunk.mock_forward(output_shape)
         print(f"{output_shape=}")
         num_parameter_this_shard_sparse = 0
@@ -429,7 +429,7 @@ def report_memory_usage_one_pp_rank(
         else:   # 不考虑重计算的影响
             num_activation = (
                 num_activation - one_chunk.num_act_post
-            ) * num_microbatch_this_pp_rank + one_chunk.num_act_post
+            ) * num_microbatch_this_pp_rank + one_chunk.num_act_post    # 推测这里是指, 最后一个 output layer 的 activation 产生后就立即 backward 了然后释放掉了
 
         # CP
         num_activation = num_activation / config.context_parallel_size
@@ -538,6 +538,7 @@ def report_memory_usage_one_pp_rank(
         "param_gb": weight_grad_memory / 3,
         "grads_gb": weight_grad_memory / 3 * 2,
         "optim_gb": weight_grad_optim_memory - weight_grad_memory,
+        "activ_gb": activation_memory,
         "param_gb_": 0,
         "grads_gb_": 0,
         "optim_gb_": 0,
