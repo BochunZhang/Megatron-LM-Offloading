@@ -91,6 +91,7 @@ from megatron.core.utils import (
     get_pg_size,
     get_pg_rank,
     StragglerDetector,
+    configure_nvtx_profiling,
 )
 from megatron.core.fp8_utils import correct_amax_history_if_needed
 from megatron.core.process_groups_config import ProcessGroupCollection
@@ -2289,6 +2290,7 @@ def post_training_step_callbacks(
             assert prof is not None
             prof.stop()
         else:
+            configure_nvtx_profiling(False)
             torch.cuda.check_error(torch.cuda.cudart().cudaProfilerStop())
             if nsys_nvtx_context is not None:
                 nsys_nvtx_context.__exit__(None, None, None)
@@ -2689,6 +2691,7 @@ def train(
                 torch.cuda.check_error(torch.cuda.cudart().cudaProfilerStart())
                 nsys_nvtx_context = torch.autograd.profiler.emit_nvtx(record_shapes=True)
                 nsys_nvtx_context.__enter__()
+                configure_nvtx_profiling(True)
 
         ft_integration.on_checkpointing_start()
         maybe_finalize_async_save(blocking=False)

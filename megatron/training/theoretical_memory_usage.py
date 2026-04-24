@@ -178,7 +178,8 @@ def compute_weight_and_optimizer_memory(args, verbose=False):
                 f"Number of parameters in other shards in billions: "
                 f"{num_parameters_on_other_model_shards / 10**9:.4f}"
             )
-
+    # weight + gradient = 2x memory (fp16 + fp32 -> 6bytes)
+    # master + momentum + variance = 3x memory (fp32 -> 12bytes)
     num_bytes_per_parameter = (
         18 if not args.use_distributed_optimizer else 6 + (12 / args.data_parallel_size)
     )
