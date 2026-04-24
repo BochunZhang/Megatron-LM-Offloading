@@ -40,6 +40,10 @@ from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import MLATransformerConfig
 from megatron.core.utils import deprecate_inference_params, get_pg_size, is_te_min_version
+from megatron.core.utils import (
+    nvtx_range_pop,
+    nvtx_range_push,
+)
 
 try:
     from megatron.core.fusions.fused_mla_yarn_rope_apply import (
@@ -275,6 +279,7 @@ class MultiLatentAttention(Attention):
         # ==================================
         # core attention computation
         # ==================================
+        nvtx_range_push(suffix="core_attention")
         # Need corresponding TE change
         if self.checkpoint_core_attention and self.training:
             core_attn_out = self._checkpointed_attention_forward(
@@ -324,6 +329,7 @@ class MultiLatentAttention(Attention):
                 core_attn_out = off_interface.group_commit(
                     core_attn_out, name="core_attn", forced_released_tensors=[query, key, value]
                 )
+        nvtx_range_pop(suffix="core_attention")
 
         # We are doing absorption with cache mla latents and decode mode.
         if self.cache_mla_latents and inference_context.is_decode_only():
@@ -349,12 +355,14 @@ class MultiLatentAttention(Attention):
         # =================
         # Output. [sq, b, h]
         # =================
+        nvtx_range_push(suffix="linear_proj")
         with off_interface(self.offload_attn_proj, core_attn_out, "attn_proj") as core_attn_out:
             output, bias = self.linear_proj(core_attn_out)
         if self.offload_attn_proj:
             output = off_interface.group_commit(
                 output, name="attn_proj", forced_released_tensors=[core_attn_out]
             )
+        nvtx_range_pop(suffix="linear_proj")
 
         return output, bias
 
@@ -579,6 +587,9 @@ class MLASelfAttention(MultiLatentAttention):
         # QKV down projection and layernorm
         # =========================================
         if self.config.q_lora_rank is not None:
+            # When q_lora_rank is set, we compress tensor 'q' here.
+            nvtx_range_push(suffix="linear_q_down_proj")
+
             # if linear_q_down_proj is ColumnParallelLinear:
             #     q_compressed: [s, b, q_lora_rank / TP]
             # elif linear_q_down_proj is Linear:
@@ -594,9 +605,13 @@ class MLASelfAttention(MultiLatentAttention):
                 q_compressed = gather_from_tensor_model_parallel_region(q_compressed)
                 if self.config.sequence_parallel:
                     q_compressed = scatter_to_sequence_parallel_region(q_compressed)
+
+            nvtx_range_pop(suffix="linear_q_down_proj")
         else:
             q_compressed = hidden_states
 
+
+        nvtx_range_push(suffix="linear_kv_down_proj")
         # if linear_kv_down_proj is ColumnParallelLinear:
         #     kv_combined: [s, b, (kv_lora_rank + qk_pos_emb_head_dim) / TP]
         # elif linear_kv_down_proj is Linear:
@@ -621,6 +636,9 @@ class MLASelfAttention(MultiLatentAttention):
                 # k_pos_emb: [s, b, qk_pos_emb_head_dim]
                 k_pos_emb = gather_from_sequence_parallel_region(k_pos_emb, group=self.tp_group)
 
+        nvtx_range_pop(suffix="linear_kv_down_proj")
+
+
         if packed_seq_params is not None:
             # If sequence packing, TE expect [t, h, d] shaped qkv input.
             # In Megatron-Core, the qkv shape is [t, 1, h, d].
@@ -635,9 +653,13 @@ class MLASelfAttention(MultiLatentAttention):
 
         if self.config.q_lora_rank is not None:
             # q_compressed: [num_tokens, q_lora_rank]
+            nvtx_range_push(suffix="q_layernorm")
             q_compressed = self.q_layernorm(q_compressed)
-
+            nvtx_range_pop(suffix="q_layernorm")
+        
+        nvtx_range_push(suffix="kv_layernorm")
         kv_compressed = self.kv_layernorm(kv_compressed)
+        nvtx_range_pop(suffix="kv_layernorm")
 
         # =========================================
         # QKV up projection and RoPE apply
@@ -647,19 +669,27 @@ class MLASelfAttention(MultiLatentAttention):
             q_compressed, kv_compressed, k_pos_emb, rotary_pos_emb
         ):
             if self.config.q_lora_rank is not None:
+                nvtx_range_push(suffix="linear_q_up_proj")
                 # q_compressed: [num_tokens, q_lora_rank]
                 # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]
                 q, _ = self.linear_q_up_proj(q_compressed)
+                nvtx_range_pop(suffix="linear_q_up_proj")
             else:
+                nvtx_range_push(suffix="linear_q_proj")
                 # q_compressed: [num_tokens, hidden_size]
                 # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]
                 q, _ = self.linear_q_proj(q_compressed)
+                nvtx_range_pop(suffix="linear_q_proj")
 
             # q: [num_tokens, n, q_head_dim]
             q = q.view(*q.size()[:-1], self.num_attention_heads_per_partition, self.q_head_dim)
 
+            nvtx_range_push(suffix="linear_kv_up_proj")
+
             # [num_tokens, qk_pos_emb_head_dim] -> [num_tokens, 1, qk_pos_emb_head_dim]
             k_pos_emb = torch.unsqueeze(k_pos_emb, -2)
+
+            nvtx_range_push(suffix="apply_rotary_pos_emb_for_mla_qkv")
 
             q_no_pe, q_pos_emb = torch.split(
                 q, [self.config.qk_head_dim, self.config.qk_pos_emb_head_dim], dim=-1
@@ -709,6 +739,8 @@ class MLASelfAttention(MultiLatentAttention):
             query = query.contiguous()
             key = key.contiguous()
 
+            nvtx_range_pop(suffix="apply_rotary_pos_emb_for_mla_qkv")
+
             return query, key, value
 
         def qkv_up_proj_and_rope_apply(q_compressed, kv_compressed, k_pos_emb, rotary_pos_emb):
@@ -719,19 +751,25 @@ class MLASelfAttention(MultiLatentAttention):
             we uniformly use [num_tokens, ...] to denote [s, b, ...] or [t, ...] for two cases.
             """
             if self.config.q_lora_rank is not None:
+                nvtx_range_push(suffix="linear_q_up_proj")
                 # q_compressed: [num_tokens, q_lora_rank]
                 # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]
                 q, _ = self.linear_q_up_proj(q_compressed)
+                nvtx_range_pop(suffix="linear_q_up_proj")
             else:
+                nvtx_range_push(suffix="linear_q_proj")
                 # q_compressed: [num_tokens, hidden_size]
                 # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]
                 q, _ = self.linear_q_proj(q_compressed)
-
+                nvtx_range_pop(suffix="linear_q_proj")
+            
             # q: [num_tokens, n, q_head_dim]
             q = q.view(*q.size()[:-1], self.num_attention_heads_per_partition, self.q_head_dim)
 
+            nvtx_range_push(suffix="linear_kv_up_proj")
             # kv: [num_tokens, n * (qk_head_dim + v_head_dim)]
             kv, _ = self.linear_kv_up_proj(kv_compressed)
+            nvtx_range_pop(suffix="linear_kv_up_proj")
 
             # kv: [num_tokens, n, (qk_head_dim + v_head_dim)]
             kv = kv.view(
@@ -739,6 +777,9 @@ class MLASelfAttention(MultiLatentAttention):
                 self.num_attention_heads_per_partition,
                 self.config.qk_head_dim + self.config.v_head_dim,
             )
+
+
+            nvtx_range_push(suffix="apply_rotary_pos_emb_for_mla_qkv")
 
             # [num_tokens, qk_pos_emb_head_dim] -> [num_tokens, 1, qk_pos_emb_head_dim]
             k_pos_emb = torch.unsqueeze(k_pos_emb, -2)
@@ -833,9 +874,11 @@ class MLASelfAttention(MultiLatentAttention):
             key = key.contiguous()
             value = value.contiguous()
 
+            nvtx_range_pop(suffix="apply_rotary_pos_emb_for_mla_qkv")
+
             return query, key, value
 
-        if self.recompute_up_proj:
+        if self.recompute_up_proj:  # selective recompute, save checkpoint
             quantization = self.config.fp8 or self.config.fp4
             self.qkv_up_checkpoint = tensor_parallel.CheckpointWithoutOutput(fp8=quantization)
             query, key, value = self.qkv_up_checkpoint.checkpoint(
@@ -845,7 +888,7 @@ class MLASelfAttention(MultiLatentAttention):
             if self.cache_mla_latents:
                 assert (
                     inference_context and not inference_context.is_static_batching()
-                ), "Caching MLA latents only works with dynamic backend inference"
+                ), "Caching MLA latents only works with dynamic backend inference"  # only for inference
                 query, key, value = qkv_up_proj_and_rope_apply_for_cached_latent_kv(
                     q_compressed, kv_compressed, k_pos_emb, rotary_pos_emb
                 )

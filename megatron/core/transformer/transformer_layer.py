@@ -573,15 +573,17 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         residual = hidden_states
 
         # Optional Input Layer norm
+        nvtx_range_push(suffix="input_layernorm")
         if self.recompute_input_layernorm:
-            self.input_layernorm_checkpoint = tensor_parallel.CheckpointWithoutOutput()
-            with off_interface(self.offload_attn_norm, hidden_states, "attn_norm") as hidden_states:
+            self.input_layernorm_checkpoint = tensor_parallel.CheckpointWithoutOutput()     # create checkpoint for input layernorm
+            with off_interface(self.offload_attn_norm, hidden_states, "attn_norm") as hidden_states:    # offload activation
                 input_layernorm_output = self.input_layernorm_checkpoint.checkpoint(
                     self.input_layernorm, hidden_states
                 )
         else:
-            with off_interface(self.offload_attn_norm, hidden_states, "attn_norm") as hidden_states:
+            with off_interface(self.offload_attn_norm, hidden_states, "attn_norm") as hidden_states:    # offload activation
                 input_layernorm_output = self.input_layernorm(hidden_states)
+        nvtx_range_pop(suffix="input_layernorm")
 
         using_fused_tp_inference_kernel = (not self.training) and (
             self.config.inference_fuse_tp_communication
@@ -668,6 +670,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             FineGrainedActivationOffloadingInterface as off_interface,
         )
 
+        nvtx_range_push(suffix="pre_mlp_layernorm")
         if self.recompute_pre_mlp_layernorm:
             self.pre_mlp_norm_checkpoint = tensor_parallel.CheckpointWithoutOutput()
             with off_interface(self.offload_mlp_norm, hidden_states, "mlp_norm") as hidden_states:
@@ -677,6 +680,7 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         else:
             with off_interface(self.offload_mlp_norm, hidden_states, "mlp_norm") as hidden_states:
                 pre_mlp_layernorm_output = self.pre_mlp_layernorm(hidden_states)
+        nvtx_range_pop(suffix="pre_mlp_layernorm")
 
         return pre_mlp_layernorm_output
 

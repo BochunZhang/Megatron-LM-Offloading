@@ -37,6 +37,12 @@ from megatron.core.transformer.moe.moe_utils import (
 from megatron.core.transformer.moe.shared_experts import SharedExpertMLP
 from megatron.core.transformer.transformer_config import TransformerConfig
 
+from megatron.core.utils import (
+    nvtx_range_pop,
+    nvtx_range_push,
+)
+
+
 """ We use the following notation throughout this file:
      H: hidden size
      B: micro batch size
@@ -294,12 +300,14 @@ class MoEAllGatherTokenDispatcher(MoETokenDispatcher):
 
         tokens_per_expert = self.local_map.sum(dim=0).long().cpu()
 
+        nvtx_range_push(suffix="permute")
         (permuted_local_hidden_states, _, self.reversed_local_input_permutation_mapping) = permute(
             hidden_states,
             self.local_map,
             num_out_tokens=tokens_per_expert.sum(),
             fused=self.config.moe_permute_fusion,
         )
+        nvtx_range_pop(suffix="permute")
 
         self.local_probs = self.local_probs.T.contiguous().masked_select(
             self.local_map.T.contiguous()
@@ -316,6 +324,7 @@ class MoEAllGatherTokenDispatcher(MoETokenDispatcher):
         original sequence positions, preparing them for the subsequent reduction scatter
         operation that will aggregate results across ranks.
         """
+        nvtx_range_push(suffix="unpermute")
         unpermuted_local_hidden = unpermute(
             hidden_states,
             self.reversed_local_input_permutation_mapping,
@@ -323,6 +332,7 @@ class MoEAllGatherTokenDispatcher(MoETokenDispatcher):
             routing_map=self.local_map,
             fused=self.config.moe_permute_fusion,
         )
+        nvtx_range_pop(suffix="unpermute")
         return unpermuted_local_hidden
 
     def token_combine(self, hidden_states):
@@ -629,6 +639,7 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
         self.tokens_per_expert = self._maybe_dtoh_and_synchronize(
             "before_permutation_1", self.tokens_per_expert
         )
+        nvtx_range_push(suffix="permute")
         self.hidden_shape_before_permute = hidden_states.shape
         (
             permutated_local_input_tokens,
@@ -642,6 +653,8 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
             fused=self.config.moe_permute_fusion,
             drop_and_pad=self.drop_and_pad,
         )
+        nvtx_range_pop(suffix="permute")
+
         return permutated_local_input_tokens, permuted_probs
 
     def token_dispatch(self, permutated_local_input_tokens, permuted_probs):
@@ -830,6 +843,7 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
             self.shared_experts.post_forward_comm()
 
         # Unpermutation 1: AlltoAll output to output
+        nvtx_range_push(suffix="unpermute")
         output = unpermute(
             permutated_local_input_tokens,
             self.reversed_local_input_permutation_mapping,
@@ -838,6 +852,7 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
             fused=self.config.moe_permute_fusion,
             drop_and_pad=self.drop_and_pad,
         )
+        nvtx_range_pop(suffix="unpermute")
 
         # Reshape the output tensor
         output = output.view(self.hidden_shape)
@@ -1293,6 +1308,7 @@ class _DeepepManager(_DispatchManager):
                 self.dispatched_routing_map, self.tokens_per_expert
             )
 
+        nvtx_range_push("deepep.permute")
         self.hidden_shape_before_permute = hidden_states.shape
         assert self.dispatched_probs.dtype == torch.float32, "DeepEP only supports float32 probs"
         hidden_states, permuted_probs, self.reversed_mapping_for_combine = permute(
@@ -1302,11 +1318,13 @@ class _DeepepManager(_DispatchManager):
             num_out_tokens=self.tokens_per_expert.sum().item(),
             fused=self.permute_fusion,
         )
+        nvtx_range_pop("deepep.permute")
         if self.router_dtype == "fp64":
             permuted_probs = permuted_probs.to(torch.float64)
         return hidden_states, permuted_probs
 
     def get_restored_hidden_states_by_experts(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        nvtx_range_push("deepep.unpermute")
         hidden_states = unpermute(
             hidden_states,
             self.reversed_mapping_for_combine,
@@ -1314,6 +1332,7 @@ class _DeepepManager(_DispatchManager):
             routing_map=self.dispatched_routing_map,
             fused=self.permute_fusion,
         )
+        nvtx_range_pop("deepep.unpermute")
         return hidden_states
 
 

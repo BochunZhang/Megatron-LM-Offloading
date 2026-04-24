@@ -4,6 +4,10 @@
 # Licensed under the MIT License - https://github.com/deepseek-ai/DeepEP/blob/main/LICENSE
 
 from megatron.core.utils import internal_api
+from megatron.core.utils import (
+    nvtx_range_pop,
+    nvtx_range_push,
+)
 
 try:
     from deep_ep import Buffer
@@ -100,6 +104,7 @@ class FusedDispatch(torch.autograd.Function):
             allocate_on_comm_stream=allocate_on_comm_stream,
         )
 
+        nvtx_range_push(suffix="deepep.forward.dispatch")
         # Do MoE dispatch
         # NOTES: the CPU will wait for GPU's signal to arrive,
         # so this is not compatible with CUDA graph
@@ -122,6 +127,7 @@ class FusedDispatch(torch.autograd.Function):
             async_finish=async_finish,
             allocate_on_comm_stream=allocate_on_comm_stream,
         )
+        nvtx_range_pop(suffix="deepep.forward.dispatch")
 
         # Make sure current stream is synchronized
         if async_finish:
@@ -146,6 +152,7 @@ class FusedDispatch(torch.autograd.Function):
         previous_event = None
         if ctx.async_finish:
             previous_event = EventOverlap(EventHandle())
+        nvtx_range_push(suffix="deepep.backward.combine")
         grad_x, grad_token_probs, after_event = buffer.combine(
             grad_output.contiguous(),
             handle,
@@ -154,6 +161,7 @@ class FusedDispatch(torch.autograd.Function):
             async_finish=ctx.async_finish,
             allocate_on_comm_stream=ctx.allocate_on_comm_stream,
         )
+        nvtx_range_pop(suffix="deepep.backward.combine")
         # Make sure current stream is synchronized
         if ctx.async_finish:
             after_event.current_stream_wait()
@@ -170,6 +178,8 @@ class FusedCombine(torch.autograd.Function):
         if async_finish:
             previous_event = EventOverlap(EventHandle())
         buffer = get_buffer(group, get_hidden_bytes(x))
+
+        nvtx_range_push(suffix="deepep.forward.combine")
         combined_x, _, after_event = buffer.combine(
             x,
             handle=handle,
@@ -177,6 +187,7 @@ class FusedCombine(torch.autograd.Function):
             previous_event=previous_event,
             allocate_on_comm_stream=allocate_on_comm_stream,
         )
+        nvtx_range_pop(suffix="deepep.forward.combine")
         # Make sure current stream is synchronized
         if async_finish:
             after_event.current_stream_wait()
@@ -194,6 +205,7 @@ class FusedCombine(torch.autograd.Function):
         if ctx.async_finish:
             previous_event = EventOverlap(EventHandle())
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
+        nvtx_range_push(suffix="deepep.backward.dispatch")
         grad_x, _, _, _, _, after_event = buffer.dispatch(
             grad_output.contiguous(),
             handle=ctx.handle,
@@ -201,6 +213,7 @@ class FusedCombine(torch.autograd.Function):
             async_finish=ctx.async_finish,
             allocate_on_comm_stream=ctx.allocate_on_comm_stream,
         )
+        nvtx_range_pop(suffix="deepep.backward.dispatch")
         # Make sure current stream is synchronized
         if ctx.async_finish:
             after_event.current_stream_wait()
@@ -362,6 +375,8 @@ class HybridEPDispatch(torch.autograd.Function):
                 num_sms_combine_api,
                 fp8_dispatch,
             )
+
+        nvtx_range_push(suffix="hybridep.forward.dispatch_with_permute")
         # If we provide the num_permuted_tokens, we do not need to use sync to
         # wait for the data in pinned memory ready
         non_blocking = num_permuted_tokens is not None
@@ -382,6 +397,7 @@ class HybridEPDispatch(torch.autograd.Function):
             num_permuted_tokens=num_permuted_tokens,
             non_blocking=non_blocking,
         )
+        nvtx_range_pop(suffix="hybridep.forward.dispatch_with_permute")
 
         ctx.handle = handle
         ctx.pad_multiple = pad_multiple
@@ -399,9 +415,13 @@ class HybridEPDispatch(torch.autograd.Function):
         Backward pass of fused dispatch of the HybridEP backend
         '''
         handle = ctx.handle
+        
+        nvtx_range_push(suffix="hybridep.backward.combine_with_unpermute")
         combined_hidden, combined_probs = _hybrid_ep_buffer.combine_with_unpermute(
             hidden=grad_x, probs=grad_probs, handle=handle, pad_multiple=ctx.pad_multiple
         )
+        nvtx_range_pop(suffix="hybridep.backward.combine_with_unpermute")
+
         return combined_hidden, None, combined_probs, None, None, None, None, None, None, None
 
 
@@ -416,9 +436,12 @@ class HybridEPCombine(torch.autograd.Function):
         '''
         Forward pass of fused combine of the HybridEP backend
         '''
+
+        nvtx_range_push(suffix="hybridep.forward.combine_with_unpermute")
         combined_hidden, _ = _hybrid_ep_buffer.combine_with_unpermute(
             hidden=x, handle=handle, pad_multiple=pad_multiple
         )
+        nvtx_range_pop(suffix="hybridep.forward.combine_with_unpermute")
         ctx.handle = handle
         ctx.pad_multiple = pad_multiple
         ctx.num_permuted_tokens = num_permuted_tokens
@@ -430,6 +453,7 @@ class HybridEPCombine(torch.autograd.Function):
         Backward pass of fused combine of the HybridEP backend
         '''
         handle = ctx.handle
+        nvtx_range_push(suffix="hybridep.backward.dispatch_with_permute")
         dispatched_hidden, _, _, _, _ = _hybrid_ep_buffer.dispatch_with_permute(
             hidden=grad_x,
             scaling_factor=None,
@@ -437,6 +461,7 @@ class HybridEPCombine(torch.autograd.Function):
             pad_multiple=ctx.pad_multiple,
             num_permuted_tokens=ctx.num_permuted_tokens,
         )
+        nvtx_range_pop(suffix="hybridep.backward.dispatch_with_permute")
         return dispatched_hidden, None, None, None, None
 
 

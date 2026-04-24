@@ -28,6 +28,10 @@ from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.typed_torch import apply_module
 from megatron.core.utils import internal_api
+from megatron.core.utils import (
+    nvtx_range_pop,
+    nvtx_range_push,
+)
 
 try:
     import transformer_engine as te  # pylint: disable=unused-import
@@ -249,7 +253,9 @@ class MoELayer(BaseMoELayer):
         This method uses the router to determine which experts to send each token to,
         producing routing probabilities and a mapping.
         """
+        nvtx_range_push(suffix="router")
         probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
+        nvtx_range_pop(suffix="router")
         return probs, routing_map
 
     @maybe_skip_or_early_return_by_cudagraph("preprocess")
@@ -266,10 +272,15 @@ class MoELayer(BaseMoELayer):
             assert (
                 not self.shared_expert_overlap
             ), "Shared expert overlap not supported when MoE latent projections are used."
+            nvtx_range_push(suffix="fc1_latent_proj")
             hidden_states, _ = self.fc1_latent_proj(hidden_states)
+            nvtx_range_pop(suffix="fc1_latent_proj")
+
+        nvtx_range_push(suffix="token_dispatcher.dispatch_preprocess")
         hidden_states, probs = self.token_dispatcher.dispatch_preprocess(
             hidden_states, routing_map, probs
         )
+        nvtx_range_pop(suffix="token_dispatcher.dispatch_preprocess")
         return hidden_states, probs
 
     def dispatch(self, hidden_states: torch.Tensor, probs: torch.Tensor):
@@ -279,7 +290,12 @@ class MoELayer(BaseMoELayer):
         tokens and their associated probabilities to the devices hosting their assigned
         experts.
         """
-        return self.token_dispatcher.token_dispatch(hidden_states, probs)
+
+        nvtx_range_push(suffix="token_dispatcher.token_dispatch")
+        ret = self.token_dispatcher.token_dispatch(hidden_states, probs)
+        nvtx_range_pop(suffix="token_dispatcher.token_dispatch")
+
+        return ret
 
     @maybe_skip_or_early_return_by_cudagraph("shared_experts_compute")
     def shared_experts_compute(self, hidden_states: torch.Tensor):
@@ -288,6 +304,7 @@ class MoELayer(BaseMoELayer):
         If a shared expert is configured and not overlapped with communication,
         it is computed here.
         """
+        nvtx_range_push(suffix="shared_experts")
         shared_expert_output = None
         if self.use_shared_expert and not self.shared_expert_overlap:
             # Compute the shared expert separately when not overlapped with communication.
@@ -306,6 +323,7 @@ class MoELayer(BaseMoELayer):
                     )
             else:
                 shared_expert_output = self.shared_experts(hidden_states)
+        nvtx_range_pop(suffix="shared_experts")
 
         return shared_expert_output
 
@@ -320,8 +338,10 @@ class MoELayer(BaseMoELayer):
         dispatched_input, tokens_per_expert, permuted_probs = (
             self.token_dispatcher.dispatch_postprocess(hidden_states, probs)
         )
+        nvtx_range_push(suffix="experts")
         expert_output, mlp_bias = self.experts(dispatched_input, tokens_per_expert, permuted_probs)
         assert mlp_bias is None, f"mlp_bias is not supported for {type(self.token_dispatcher)}"
+        nvtx_range_pop(suffix="experts")
         output = self.token_dispatcher.combine_preprocess(expert_output)
 
         return output, mlp_bias
@@ -332,7 +352,9 @@ class MoELayer(BaseMoELayer):
         This method uses the token dispatcher to combine the outputs from different
         experts (e.g., via an All-to-All communication).
         """
+        nvtx_range_push(suffix="token_dispatcher.token_combine")
         output = self.token_dispatcher.token_combine(output)
+        nvtx_range_pop(suffix="token_dispatcher.token_combine")
         return output
 
     def postprocess(self, output: torch.Tensor, shared_expert_output: Optional[torch.Tensor]):
@@ -341,10 +363,14 @@ class MoELayer(BaseMoELayer):
 
         output = self.token_dispatcher.combine_postprocess(output)
         if self.config.moe_latent_size:
+            nvtx_range_push(suffix="fc2_latent_proj")
             output, _ = self.fc2_latent_proj(output)
+            nvtx_range_pop(suffix="fc2_latent_proj")
 
         if shared_expert_output is not None:
+            nvtx_range_push(suffix="add_shared_expert_and_experts_output")
             output = output + shared_expert_output
+            nvtx_range_pop(suffix="add_shared_expert_and_experts_output")
         return output
 
     def router_and_preprocess(self, hidden_states: torch.Tensor):
