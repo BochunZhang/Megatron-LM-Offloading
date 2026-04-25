@@ -2011,7 +2011,8 @@ def training_log(
             snapshot = torch.cuda.memory._snapshot()
             from pickle import dump
 
-            with open(args.memory_snapshot_path, 'wb') as f:
+            # with open(args.memory_snapshot_path, 'wb') as f:
+            with open(f"{args.memory_snapshot_path}/snapshot.rank[{torch.distributed.get_rank()}].pickle", 'wb') as f:
                 dump(snapshot, f)
 
         elapsed_time = timers('interval-time').elapsed(barrier=True, reset=should_reset)
