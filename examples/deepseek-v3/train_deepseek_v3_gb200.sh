@@ -1,4 +1,4 @@
-set -x
+# set -x
 
 # deepseek-v3-gb200-reproduce-guide.md
 export CUDA_DEVICE_MAX_CONNECTIONS=1
@@ -204,6 +204,7 @@ TENSORBOARD_PATH=$LOGS_PATH/tensorboard
 CHECKPOINTS_PATH=$LOGS_PATH/checkpoints
 
 rm -rf $LOGS_PATH
+mkdir -p $CURRENT_PATH/logs
 mkdir -p $TENSORBOARD_PATH
 mkdir -p $CHECKPOINTS_PATH
 mkdir -p ./data-cache
