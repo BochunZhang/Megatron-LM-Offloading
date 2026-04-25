@@ -90,12 +90,12 @@ NUM_EXPERT=256
 NUM_LAYER=61
 MOE_FREQ="([0]*3+[1]*58)"
 SEQ_LEN=4096
-
+ENABLE_CUDA_GRAPH=false
 # default dispatcher
 DISPATCHER="hybridep"
 
 # args
-params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:" -- "$@")
+params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,cuda-graph:" -- "$@")
 eval set -- "$params"
 
 while true; do
@@ -144,6 +144,10 @@ while true; do
         --dispatcher)
             DISPATCHER="$2"
             shift 2
+            ;;
+        --enable-cuda-graph)
+            ENABLE_CUDA_GRAPH=true
+            shift 1
             ;;
         --)
             shift
@@ -302,10 +306,14 @@ case "$DISPATCHER" in
             --moe-flex-dispatcher-backend deepep
             --moe-router-fusion
             --moe-permute-fusion
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
             --moe-router-padding-for-quantization
         )
+        if [ "$ENABLE_CUDA_GRAPH" = true ]; then
+            MOE_ARGS+=(
+                --cuda-graph-impl transformer_engine
+                --cuda-graph-scope attn moe_router moe_preprocess
+            )
+        fi
         ;;
     hybridep)
         # hybrid-ep
@@ -314,11 +322,15 @@ case "$DISPATCHER" in
             --moe-token-dispatcher-type flex
             --moe-flex-dispatcher-backend hybridep
             --moe-hybridep-num-sms 32
-            --cuda-graph-impl transformer_engine
-            --cuda-graph-scope attn moe_router moe_preprocess
             --moe-router-fusion
             --moe-router-padding-for-quantization
         )
+        if [ "$ENABLE_CUDA_GRAPH" = true ]; then
+            MOE_ARGS+=(
+                --cuda-graph-impl transformer_engine
+                --cuda-graph-scope attn moe_router moe_preprocess
+            )
+        fi
         ;;
     alltoall)
         # alltoall
@@ -450,19 +462,6 @@ if [ $RANK -eq 0 ]; then
         --force-overwrite true 
         --capture-range=cudaProfilerApi 
         --capture-range-end=stop 
-
-        # nsys profile -s none -t nvtx,cuda
-        # nsys profile -s none -t nvtx,cuda
-        # --cuda-event-trace=false
-        # --cudabacktrace=all 
-        # --cuda-graph-trace=node 
-        # --python-backtrace=cuda 
-        # --wait all 
-        # nsys profile -s none -t nvtx,cuda
-        # -o $LOG_PATH/$MODEL.nsys-rep
-        # --force-overwrite true 
-        # --capture-range=cudaProfilerApi 
-        # --capture-range-end=stop 
     )
 fi
 
