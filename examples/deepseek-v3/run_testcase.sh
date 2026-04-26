@@ -11,9 +11,13 @@ usage() {
     echo "Available testcases:"
     echo "  measure-operators-4gpu  - Test with dp=ep=4, alltoall dispatcher, seq_len=4096,"
     echo "                            mbs=1/2/4/8, 2 dense layers + 3 MoE layers, 32 experts, no cuda graph"
+    echo "  measure-pp-vpp-4gpu    - Test with pp=4, vpp=4, 4 GPUs, seq_len=4096,"
+    echo "                            mbs=1, gbs=64, 3 dense layers + 26 MoE layers, 256 experts,"
+    echo "                            one test only"
     echo ""
     echo "Example:"
     echo "  $0 --test measure-operators-4gpu"
+    echo "  $0 --test measure-pp-vpp-4gpu"
     exit 1
 }
 
@@ -69,6 +73,52 @@ run_measure_operators_4gpu() {
     echo "========================================"
 }
 
+# Function to run measure-pp-vpp-4gpu testcase
+run_measure_pp_vpp_4gpu() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    echo "========================================"
+    echo "Running testcase: measure-pp-vpp-4gpu"
+    echo "========================================"
+    echo "Configuration:"
+    echo "  - PP: 4, VPP: 4"
+    echo "  - Dispatcher: alltoall"
+    echo "  - Sequence Length: 4096"
+    echo "  - Layer Layout: 3 dense + 26 MoE (total 29 layers)"
+    echo "  - Experts: 256"
+    echo "  - Micro Batch Size: 1"
+    echo "  - Global Batch Size: 64"
+    echo "  - CUDA Graph: disabled"
+    echo "========================================"
+
+    PARAM=(
+        "$script_dir/train_deepseek_v3_gb200.sh"
+        --tp 1
+        --pp 4
+        --pp-layout "Et|(tt|)*14L"
+        --ep 1
+        --micro-batch-size 1
+        --num-expert 256
+        --num-layer 29
+        --moe-freq "([0]*3+[1]*26)"
+        --seq-length 4096
+        --dispatcher alltoall
+    )
+
+    bash "${PARAM[@]}"
+
+    if [ $? -eq 0 ]; then
+        echo "===== Successfully completed measure-pp-vpp-4gpu ====="
+    else
+        echo "===== Failed measure-pp-vpp-4gpu ====="
+    fi
+
+    echo ""
+    echo "========================================"
+    echo "measure-pp-vpp-4gpu testcase completed"
+    echo "========================================"
+}
+
 # Parse arguments
 if [ $# -eq 0 ]; then
     usage
@@ -104,11 +154,15 @@ case "$TESTCASE_NAME" in
     measure-operators-4gpu)
         run_measure_operators_4gpu
         ;;
+    measure-pp-vpp-4gpu)
+        run_measure_pp_vpp_4gpu
+        ;;
     *)
         echo "Error: Unknown testcase '$TESTCASE_NAME'"
         echo ""
         echo "Available testcases:"
         echo "  measure-operators-4gpu"
+        echo "  measure-pp-vpp-4gpu"
         exit 1
         ;;
 esac
