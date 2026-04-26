@@ -41,6 +41,11 @@ from .mappings import (
 from .random import get_cuda_rng_tracker, get_expert_parallel_rng_tracker_name
 from .utils import VocabUtility
 
+from megatron.core.utils import(
+    nvtx_range_pop,
+    nvtx_range_push,
+)
+
 _grad_accum_fusion_available = True
 try:
     import fused_weight_gradient_mlp_cuda
@@ -271,6 +276,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         Args:
             input_ (torch.Tensor): Input tensor.
         """
+        nvtx_range_push(suffix="vocab_parallel_embedding_forward")
         if self.tp_group.size() > 1:
             # Build the mask.
             input_mask = (input_ < self.vocab_start_index) | (input_ >= self.vocab_end_index)
@@ -298,6 +304,7 @@ class VocabParallelEmbedding(torch.nn.Module):
         else:
             # Reduce across all the model parallel GPUs.
             output = reduce_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
+        nvtx_range_pop(suffix="vocab_parallel_embedding_forward")
         return output
 
     def sharded_state_dict(
