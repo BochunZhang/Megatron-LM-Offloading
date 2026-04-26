@@ -40,7 +40,19 @@ run_measure_operators_4gpu() {
         echo ""
         echo "===== Running with Micro Batch Size: $mbs ====="
 
-        bash "$script_dir/train_deepseek_v3_gb200.sh" \n            --tp 1 \n            --pp 1 \n            --ep 4 \n            --micro-batch-size $mbs \n            --num-expert 32 \n            --num-layer 5 \n            --moe-freq "([0]*2+[1]*3)" \n            --seq-length 4096 \n            --dispatcher alltoall
+        PARAM=(
+            "$script_dir/train_deepseek_v3_gb200.sh"
+            --tp 1
+            --pp 1
+            --ep 4
+            --micro-batch-size $mbs
+            --num-expert 32
+            --num-layer 5
+            --moe-freq "([0]*2+[1]*3)"
+            --seq-length 4096
+            --dispatcher alltoall
+        )
+        bash "${PARAM[@]}"
 
         if [ $? -eq 0 ]; then
             echo "===== Successfully completed with MBS=$mbs ====="
