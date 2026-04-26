@@ -155,9 +155,8 @@ run_measure_pp_vpp_4gpu() {
         --pp-layout "Et|(tt|)*14L"
         --ep 1
         --micro-batch-size 1
-        --num-expert 256
         --num-layer 29
-        --moe-freq "([0]*3+[1]*26)"
+        --moe-freq "([0]*29)"
         --seq-length 4096
         --dispatcher alltoall
     )
