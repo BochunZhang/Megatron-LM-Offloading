@@ -334,13 +334,14 @@ def test_mxfp8_with_captured_graphs(
 
     # Capture CUDA Graph
     graphed_linear = make_graphed_callables(
-        lambda x_: linear(x_),
-        [x],
+        linear,
+        (x,),
     )
 
-    # Run with captured graph
-    with fp8_autocast(enabled=True, fp8_recipe=recipe):
-        y = graphed_linear(x)
+    # Run with captured graph (warmup)
+    for _ in range(3):
+        with fp8_autocast(enabled=True, fp8_recipe=recipe):
+            y = graphed_linear(x)
 
     # Benchmark
     import time
