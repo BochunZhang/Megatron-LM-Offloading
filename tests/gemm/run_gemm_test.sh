@@ -95,16 +95,6 @@ mkdir -p $OUTPUT_BASE
 # Add profiling if enabled
 if [[ "$PROFILE" == true ]]; then
     export export NVTE_NVTX_ENABLED=1
-    NSYS_ARGS=(
-        nsys profile -s none -t nvtx,cuda,cudnn,cublas
-        --cudabacktrace=all 
-        --cuda-graph-trace=node 
-        --python-backtrace=cuda 
-        --wait all 
-        --force-overwrite true 
-        # --capture-range=cudaProfilerApi 
-        # --capture-range-end=stop 
-    )
 fi
 
 
@@ -116,11 +106,17 @@ for mbs in "${BATCH[@]}"; do
                 echo "----------------------------------------"
                 
                 # Output file for this batch size
-                OUTPUT_FILE="${OUTPUT_BASE}/${OUTPUT_BASE}.mbs${mbs}.seq${seq}.hds${hds}.out${out}"
+                OUTPUT_FILE="${OUTPUT_BASE}/mbs${mbs}.seq${seq}.hds${hds}.out${out}"
 
                 # Add profiling if enabled
                 if [[ "$PROFILE" == true ]]; then
-                    NSYS_ARGS+=(
+                        NSYS_ARGS=(
+                        nsys profile -s none -t nvtx,cuda,cudnn,cublas
+                        --cudabacktrace=all 
+                        --cuda-graph-trace=node 
+                        --python-backtrace=cuda 
+                        --wait all 
+                        --force-overwrite true 
                         -o $OUTPUT_FILE.nsys-rep
                     )
                 fi
