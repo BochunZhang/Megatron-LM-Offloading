@@ -9,7 +9,7 @@ set -e
 
 # Default values
 RECIPE="mxfp8"
-TEST="forward"
+TEST="batch"
 PROFILE=false
 OUTPUT_DIR="tests/gemm/results"
 
