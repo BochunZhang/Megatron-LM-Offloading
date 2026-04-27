@@ -8,8 +8,8 @@
 set -e
 
 # Default values
-RECIPE=""
-TEST=""
+RECIPE="mxfp8"
+TEST="forward"
 PROFILE=false
 OUTPUT_DIR="tests/gemm/results"
 
@@ -48,22 +48,37 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required arguments
-if [[ -z "$RECIPE" ]]; then
-    echo "Error: --recipe is required"
-    exit 1
-fi
-
-if [[ -z "$TEST" ]]; then
-    echo "Error: --test is required"
-    exit 1
-fi
-
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
 
 # Python script path
-PY_SCRIPT="tests/gemm/mxfp8_gemm.py"
+case "$RECIPE" in
+    mxfp8)
+        PY_SCRIPT="tests/gemm/mxfp8_gemm.py"
+        ;;
+    bf16)
+        PY_SCRIPT="tests/gemm/mxfp8_gemm.py"
+        ;;
+    *)
+        echo "Fatal: No matching script for recipe '$RECIPE'"
+        exit 1
+        ;;
+esac
+
+
+# test config
+case "$TEST" in
+    batch)
+        BATCH=(1 2 4 8 16)
+        HIDDEN=(7168)
+        OUT=(1536)
+        SEQ=(4096)
+        ;;
+    *)
+        echo "Fatal: No matching testcase for '$TEST'"
+        exit 1
+        ;;
+esac
+
+
 
 # Check if python script exists
 if [[ ! -f "$PY_SCRIPT" ]]; then
@@ -72,78 +87,60 @@ if [[ ! -f "$PY_SCRIPT" ]]; then
 fi
 
 # Output base path
-OUTPUT_BASE="$OUTPUT_DIR/${RECIPE}.${TEST}"
+OUTPUT_BASE="$OUTPUT_DIR/${RECIPE}-${TEST}"
 
-if [[ "$RECIPE" == "mxfp8" ]]; then
-    if [[ "$TEST" == "batch" ]]; then
-        # Batch size sweep test
-        echo "Running batch size sweep for MXFP8 GEMM..."
-        echo "Configuration: hidden_size=7168, out_features=1536, seq_len=4096"
-        echo ""
+mkdir -p $OUTPUT_BASE
 
-        # Define batch sizes
-        BATCH_SIZES=(1 2 4 8 16)
 
-        # Create results file for batch test
-        BATCH_RESULTS=()
-
-        for bs in "${BATCH_SIZES[@]}"; do
-            echo "Testing with batch_size=$bs"
-            echo "----------------------------------------"
-
-            # Output file for this batch size
-            OUTPUT_FILE="${OUTPUT_BASE}.bs${bs}.xlsx"
-
-            # Build command
-            CMD="python $PY_SCRIPT \n                --case forward \n                --batch_size $bs \n                --seq_len 4096 \n                --hidden_size 7168 \n                --out-features 1536 \n                --output-path $OUTPUT_FILE"
-
-            # Add profiling if enabled
-            if [[ "$PROFILE" == true ]]; then
-                echo "Running with Nsight Systems profiling..."
-                NSYS_OUTPUT="${OUTPUT_BASE}.bs${bs}.nsys-rep"
-                nsys profile \n                    --trace=cuda,nvtx \n                    --force-overwrite=true \n                    --output="$NSYS_OUTPUT" \n                    $CMD
-            else
-                $CMD
-            fi
-
-            echo ""
-        done
-
-        echo "Batch size sweep completed!"
-        echo "Results saved to: $OUTPUT_BASE.bs*.xlsx"
-        if [[ "$PROFILE" == true ]]; then
-            echo "Profiles saved to: $OUTPUT_BASE.bs*.nsys-rep"
-        fi
-
-    else
-        # Single test
-        echo "Running single test: $TEST"
-        echo ""
-
-        OUTPUT_FILE="${OUTPUT_BASE}.xlsx"
-
-        # Build command
-        CMD="python $PY_SCRIPT \n            --case $TEST \n            --output-path $OUTPUT_FILE"
-
-        # Add profiling if enabled
-        if [[ "$PROFILE" == true ]]; then
-            echo "Running with Nsight Systems profiling..."
-            NSYS_OUTPUT="${OUTPUT_BASE}.nsys-rep"
-            nsys profile \n                --trace=cuda,nvtx \n                --force-overwrite=true \n                --output="$NSYS_OUTPUT" \n                $CMD
-        else
-            $CMD
-        fi
-
-        echo ""
-        echo "Results saved to: $OUTPUT_FILE"
-        if [[ "$PROFILE" == true ]]; then
-            echo "Profile saved to: $NSYS_OUTPUT"
-        fi
-    fi
-else
-    echo "Error: Unknown recipe '$RECIPE'. Currently only 'mxfp8' is supported."
-    exit 1
+# Add profiling if enabled
+if [[ "$PROFILE" == true ]]; then
+    export export NVTE_NVTX_ENABLED=1
+    NSYS_ARGS=(
+        nsys profile -s none -t nvtx,cuda,cudnn,cublas
+        --cudabacktrace=all 
+        --cuda-graph-trace=node 
+        --python-backtrace=cuda 
+        --wait all 
+        --force-overwrite true 
+        # --capture-range=cudaProfilerApi 
+        # --capture-range-end=stop 
+    )
 fi
+
+
+for mbs in "${BATCH[@]}"; do
+    for hds in "${HIDDEN[@]}"; do
+        for out in "${OUT[@]}"; do
+            for seq in "${SEQ[@]}"; do
+                echo "Testing with batch_size=$mbs, hidden_size=$hds, output_size=$out, seq_length=$seq"
+                echo "----------------------------------------"
+                
+                # Output file for this batch size
+                OUTPUT_FILE="${OUTPUT_BASE}/${OUTPUT_BASE}.mbs${mbs}.seq${seq}.hds${hds}.out${out}"
+
+                # Add profiling if enabled
+                if [[ "$PROFILE" == true ]]; then
+                    NSYS_ARGS+=(
+                        -o $OUTPUT_FILE.nsys-rep
+                    )
+                fi
+
+                PYTHON_ARGS=(
+                    python3 "$PY_SCRIPT"
+                    --case forward
+                    --batch_size "$mbs"
+                    --hidden_size "$hds"
+                    --seq_len "$seq"
+                    --out-features "$out"
+                    --output-path "$OUTPUT_FILE.xlsx"
+                )
+
+                ${NSYS_ARGS[@]} \
+                ${PYTHON_ARGS[@]}
+            done
+        done
+    done
+done
 
 echo ""
 echo "All tests completed successfully!"
