@@ -128,8 +128,8 @@ def test_mxfp8_linear_forward(
     linear = linear.cuda()
 
     # Create random input
-    # Shape: [batch_size * seq_len, hidden_size]
-    x = torch.randn(batch_size * seq_len, hidden_size,
+    # Shape: [seq_len, batch_size, hidden_size] (s, b, h)
+    x = torch.randn(seq_len, batch_size, hidden_size,
                   dtype=torch.bfloat16,
                   device="cuda",
                   requires_grad=True)
@@ -224,11 +224,11 @@ def test_mxfp8_linear_training(
     optimizer = torch.optim.AdamW(linear.parameters(), lr=learning_rate)
 
     # Training data
-    # Shape: [batch_size, seq_len, hidden_size]
-    x_train = torch.randn(batch_size, seq_len, hidden_size,
+    # Shape: [seq_len, batch_size, hidden_size] (s, b, h)
+    x_train = torch.randn(seq_len, batch_size, hidden_size,
                         dtype=torch.bfloat16,
                         device="cuda")
-    y_target = torch.randn(batch_size, seq_len, out_features,
+    y_target = torch.randn(seq_len, batch_size, out_features,
                         dtype=torch.bfloat16,
                         device="cuda")
 
@@ -245,7 +245,7 @@ def test_mxfp8_linear_training(
 
     # Training loop
     for epoch in range(num_epochs):
-        # Flatten input: [batch_size * seq_len, hidden_size]
+        # Flatten input: [seq_len * batch_size, hidden_size]
         x_flat = x_train.view(-1, hidden_size)
         y_flat = y_target.view(-1, out_features)
 
@@ -327,30 +327,31 @@ def test_mxfp8_with_captured_graphs(
     linear = linear.cuda()
 
     # Create static input for graph capture
-    x_static = torch.randn(batch_size * seq_len, hidden_size,
+    # Shape: [seq_len, batch_size, hidden_size] (s, b, h)
+    x = torch.randn(seq_len, batch_size, hidden_size,
                         dtype=torch.bfloat16,
                         device="cuda")
 
     # Capture CUDA Graph
     graphed_linear = make_graphed_callables(
-        lambda x: linear(x),
-        [x_static],
+        lambda x_: linear(x_),
+        [x],
     )
 
     # Run with captured graph
     with fp8_autocast(enabled=True, fp8_recipe=recipe):
-        y = graphed_linear(x_static)
+        y = graphed_linear(x)
 
     # Benchmark
     import time
-    num_iterations = 100
+    num_iterations = 10
 
     torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(num_iterations):
         with fp8_autocast(enabled=True, fp8_recipe=recipe):
-            y = graphed_linear(x_static)
+            y = graphed_linear(x)
 
     torch.cuda.synchronize()
     elapsed_ms = (time.time() - start_time) * 1000
@@ -359,7 +360,7 @@ def test_mxfp8_with_captured_graphs(
     # Compute TFLOPS
     tflops = compute_tflops(batch_size, seq_len, hidden_size, avg_time_ms, is_training=False)
 
-    print(f"Input shape: {x_static.shape}")
+    print(f"Input shape: {x.shape}")
     print(f"Output shape: {y.shape}")
     print(f"Average time per iteration: {avg_time_ms:.4f} ms")
     print(f"TFLOPS: {tflops:.4f}")
