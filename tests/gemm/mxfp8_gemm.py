@@ -178,6 +178,137 @@ def test_mxfp8_linear_forward(
 
     return y
 
+def test_mxfp8_linear_forward_multistream(
+    batch_size: int,
+    seq_len: int,
+    hidden_size: int,
+    out_features: Optional[int] = None,
+    num_iterations: int = 10,
+    results=None,
+):
+    """
+    Test MXFP8 Linear layer forward pass on two CUDA streams concurrently.
+
+    This test creates two independent CUDA streams and runs equivalent forward
+    operations on each stream to measure concurrent performance.
+
+    Parameters
+    ----------
+    batch_size : int
+        Batch size per stream
+    seq_len : int
+        Sequence length
+    hidden_size : int
+        Input dimension (must be divisible by 32 for MXFP8)
+    out_features : Optional[int]
+        Output dimension (must be divisible by 32 for MXFP8, defaults to hidden_size)
+    num_iterations : int
+        Number of warmup iterations
+    """
+    # Default to hidden_size if not specified
+    if out_features is None:
+        out_features = hidden_size
+
+    # Ensure dimensions are divisible by 32 for MXFP8
+    assert hidden_size % 32 == 0, "hidden_size must be divisible by 32 for MXFP8"
+    assert out_features % 32 == 0, "out_features must be divisible by 32 for MXFP8"
+
+    # Create two independent Linear layers (one for each stream)
+    recipe = MXFP8BlockScaling(fp8_format=Format.E4M3)
+
+    with fp8_autocast(enabled=True, fp8_recipe=recipe):
+        linear1 = te.Linear(
+            in_features=hidden_size,
+            out_features=out_features,
+            bias=True,
+            params_dtype=torch.bfloat16,
+        )
+        linear2 = te.Linear(
+            in_features=hidden_size,
+            out_features=out_features,
+            bias=True,
+            params_dtype=torch.bfloat16,
+        )
+
+    # Move to GPU
+    linear1 = linear1.cuda()
+    linear2 = linear2.cuda()
+
+    # Create two CUDA streams
+    stream1 = torch.cuda.Stream()
+    stream2 = torch.cuda.Stream()
+
+    # Create random inputs for each stream
+    # Shape: [seq_len, batch_size, hidden_size] (s, b, h)
+    x1 = torch.randn(seq_len, batch_size, hidden_size,
+                   dtype=torch.bfloat16,
+                   device="cuda",
+                   requires_grad=True)
+    x2 = torch.randn(seq_len, batch_size, hidden_size,
+                   dtype=torch.bfloat16,
+                   device="cuda",
+                   requires_grad=True)
+
+    print(f"\n{'='*60}")
+    print(f"MXFP8 Linear Layer Multi-Stream Forward Pass Test")
+    print(f"{'='*60}")
+    print(f"Number of streams: 2")
+    print(f"Input shape per stream: {x1.shape}")
+    print(f"Weight shape: {linear1.weight.shape}")
+    print(f"Recipe: {recipe}")
+
+    # Warmup iterations on both streams
+    with torch.cuda.stream(stream1):
+        with fp8_autocast(enabled=True, fp8_recipe=recipe):
+            for _ in range(num_iterations*5):
+                _ = linear1(x1)
+
+    with torch.cuda.stream(stream2):
+        with fp8_autocast(enabled=True, fp8_recipe=recipe):
+            for _ in range(num_iterations*5):
+                _ = linear2(x2)
+
+    torch.cuda.synchronize()
+
+    # Timed forward pass on both streams
+    import time
+    start_time = time.time()
+
+    with torch.cuda.stream(stream1):
+        with fp8_autocast(enabled=True, fp8_recipe=recipe):
+            y1 = linear1(x1)
+
+    with torch.cuda.stream(stream2):
+        with fp8_autocast(enabled=True, fp8_recipe=recipe):
+            y2 = linear2(x2)
+
+    torch.cuda.synchronize()
+    elapsed_ms = (time.time() - start_time) * 1000
+
+    # Compute TFLOPS (multiply by 2 for 2 streams)
+    tflops_per_stream = compute_tflops(batch_size, seq_len, hidden_size, elapsed_ms, is_training=False)
+    tflops_total = tflops_per_stream * 2
+
+    print(f"Forward pass time (both streams): {elapsed_ms:.4f} ms")
+    print(f"TFLOPS per stream: {tflops_per_stream:.4f}")
+    print(f"Total TFLOPS (2 streams): {tflops_total:.4f}")
+    print(f"Output shape stream 1: {y1.shape}")
+    print(f"Output shape stream 2: {y2.shape}")
+
+    # Store results
+    if results is not None:
+        results["test"] = "multistream"
+        results["num_streams"] = 2
+        results["batch_size_per_stream"] = batch_size
+        results["seq_len"] = seq_len
+        results["hidden_size"] = hidden_size
+        results["out_features"] = out_features
+        results["time_ms"] = elapsed_ms
+        results["tflops_per_stream"] = tflops_per_stream
+        results["tflops_total"] = tflops_total
+
+    return y1, y2
+
 def test_mxfp8_linear_training(
     batch_size: int = 16,
     seq_len: int = 128,
@@ -393,9 +524,9 @@ Examples:
     parser.add_argument(
         "--case",
         type=str,
-        choices=["forward", "training", "graph", "all"],
+        choices=["forward", "training", "graph", "multistream", "all"],
         default="all",
-        help="Test case to run: 'forward', 'training', 'graph', or 'all' (default: all)",
+        help="Test case to run: 'forward', 'training', 'graph', 'multistream', or 'all' (default: all)",
     )
     parser.add_argument(
         "--batch_size",
@@ -495,6 +626,18 @@ Examples:
             out_features=args.out_features,
             num_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
+            results=result,
+        )
+        all_results.append(result)
+
+    if args.case == "multistream" or args.case == "all":
+        result = {}
+        test_mxfp8_linear_forward_multistream(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            hidden_size=args.hidden_size,
+            out_features=args.out_features,
+            num_iterations=args.iterations,
             results=result,
         )
         all_results.append(result)
