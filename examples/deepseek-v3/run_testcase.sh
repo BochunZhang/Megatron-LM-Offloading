@@ -11,7 +11,9 @@ usage() {
     echo "Available testcases:"
     echo "  measure-operators-4gpu  - Test with dp=ep=4, alltoall dispatcher, seq_len=4096,"
     echo "                            mbs=1/2/4/8, 2 dense layers + 3 MoE layers, 32 experts, no cuda graph"
-    echo "  measure-operators-deepep - Test with dp=ep=4, deepep dispatcher, seq_len=4096,"
+    echo "  measure-operators-4gpu-cudagraph - Test with dp=ep=4, alltoall dispatcher, seq_len=4096,"
+    echo "                            mbs=1/2/4/8, 2 dense layers + 3 MoE layers, 32 experts, cuda graph enabled"
+    echo "  measure-operators-hybridep - Test with dp=ep=4, hybridep dispatcher, seq_len=4096,"
     echo "                            mbs=1/2/4/8, 2 dense layers + 3 MoE layers, 32 experts, cuda graph enabled"
     echo "  measure-pp-vpp-4gpu    - Test with pp=4, vpp=4, 4 GPUs, seq_len=4096,"
     echo "                            mbs=1, gbs=64, 3 dense layers + 26 MoE layers, 256 experts,"
@@ -19,7 +21,8 @@ usage() {
     echo ""
     echo "Example:"
     echo "  $0 --test measure-operators-4gpu"
-    echo "  $0 --test measure-operators-deepep"
+    echo "  $0 --test measure-operators-4gpu-cudagraph"
+    echo "  $0 --test measure-operators-hybridep"
     echo "  $0 --test measure-pp-vpp-4gpu"
     exit 1
 }
@@ -55,7 +58,6 @@ run_measure_operators_4gpu() {
             --micro-batch-size $mbs
             --global-batch-size 128
             --num-expert 32
-            --num-layer 5
             --moe-freq "([0]*2+[1]*3)"
             --seq-length 4096
             --dispatcher alltoall
@@ -77,16 +79,70 @@ run_measure_operators_4gpu() {
     echo "========================================"
 }
 
-# Function to run measure-operators-deepep testcase
-run_measure_operators_deepep() {
+# Function to run measure-operators-4gpu-cudagraph testcase
+run_measure_operators_with_graph_4gpu() {
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
     echo "========================================"
-    echo "Running testcase: measure-operators-deepep"
+    echo "Running testcase: measure-operators-with-graph-4gpu"
     echo "========================================"
     echo "Configuration:"
     echo "  - DP: 4, EP: 4"
-    echo "  - Dispatcher: deepep"
+    echo "  - Dispatcher: alltoall"
+    echo "  - Sequence Length: 4096"
+    echo "  - Layer Layout: 2 dense + 3 MoE (total 5 layers)"
+    echo "  - Experts: 32"
+    echo "  - CUDA Graph: enabled"
+    echo "  - Micro Batch Sizes: 1, 2, 4, 8"
+    echo "========================================"
+
+    local mbs_values=(1 2 4 8)
+
+    for mbs in "${mbs_values[@]}"; do
+        echo ""
+        echo "===== Running with Micro Batch Size: $mbs ====="
+
+        PARAM=(
+            "$script_dir/train_deepseek_v3_gb200.sh"
+            --tp 1
+            --pp 1
+            --ep 4
+            --micro-batch-size $mbs
+            --global-batch-size 128
+            --num-expert 32
+            --num-layer 5
+            --moe-freq "([0]*2+[1]*3)"
+            --seq-length 4096
+            --dispatcher alltoall
+            --enable-cuda-graph
+        )
+        bash "${PARAM[@]}"
+
+        if [ $? -eq 0 ]; then
+            echo "===== Successfully completed with MBS=$mbs ====="
+        else
+            echo "===== Failed with MBS=$mbs ====="
+        fi
+
+        echo ""
+    done
+
+    echo ""
+    echo "========================================"
+    echo "measure-operators-4gpu-cudagraph testcase completed"
+    echo "========================================"
+}
+
+# Function to run measure-operators-hybridep testcase
+run_measure_operators_hybridep_4gpu() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    echo "========================================"
+    echo "Running testcase: measure-operators-hybridep-4gpu"
+    echo "========================================"
+    echo "Configuration:"
+    echo "  - DP: 4, EP: 4"
+    echo "  - Dispatcher: hybridep"
     echo "  - Sequence Length: 4096"
     echo "  - Layer Layout: 2 dense + 3 MoE (total 5 layers)"
     echo "  - Experts: 32"
@@ -110,7 +166,7 @@ run_measure_operators_deepep() {
             --num-layer 5
             --moe-freq "([0]*2+[1]*3)"
             --seq-length 4096
-            --dispatcher deepep
+            --dispatcher hybridep
             --enable-cuda-graph
         )
         bash "${PARAM[@]}"
@@ -126,7 +182,60 @@ run_measure_operators_deepep() {
 
     echo ""
     echo "========================================"
-    echo "measure-operators-deepep testcase completed"
+    echo "measure-operators-hybridep testcase completed"
+    echo "========================================"
+}
+
+run_measure_operators_hybridep_offload_4gpu() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    echo "========================================"
+    echo "Running testcase: measure-operators-hybridep-offload-4gpu"
+    echo "========================================"
+    echo "Configuration:"
+    echo "  - DP: 4, EP: 4"
+    echo "  - Dispatcher: hybridep"
+    echo "  - Sequence Length: 4096"
+    echo "  - Layer Layout: 2 dense + 3 MoE (total 5 layers)"
+    echo "  - Experts: 32"
+    echo "  - CUDA Graph: enabled"
+    echo "  - Micro Batch Sizes: 1, 2, 4, 8"
+    echo "========================================"
+
+    local mbs_values=(1 2 4 8)
+
+    for mbs in "${mbs_values[@]}"; do
+        echo ""
+        echo "===== Running with Micro Batch Size: $mbs ====="
+
+        PARAM=(
+            "$script_dir/train_deepseek_v3_gb200.sh"
+            --tp 1
+            --pp 1
+            --ep 4
+            --micro-batch-size $mbs
+            --num-expert 32
+            --num-layer 61
+            --moe-freq "([0]*3+[1]*58)"
+            --seq-length 4096
+            --dispatcher hybridep
+            --offload-activaiton
+            --offload-weights
+        )
+        bash "${PARAM[@]}"
+
+        if [ $? -eq 0 ]; then
+            echo "===== Successfully completed with MBS=$mbs ====="
+        else
+            echo "===== Failed with MBS=$mbs ====="
+        fi
+
+        echo ""
+    done
+
+    echo ""
+    echo "========================================"
+    echo "measure-operators-hybridep testcase completed"
     echo "========================================"
 }
 
@@ -210,8 +319,14 @@ case "$TESTCASE_NAME" in
     measure-operators-4gpu)
         run_measure_operators_4gpu
         ;;
-    measure-operators-deepep)
-        run_measure_operators_deepep
+    measure-operators-with-graph-4gpu)
+        run_measure_operators_with_graph_4gpu
+        ;;
+    measure-operators-hybridep-4gpu)
+        run_measure_operators_hybridep_4gpu
+        ;;
+    measure-operators-hybridep-offload-4gpu)
+        run_measure_operators_hybridep_offload_4gpu
         ;;
     measure-pp-vpp-4gpu)
         run_measure_pp_vpp_4gpu
@@ -221,7 +336,8 @@ case "$TESTCASE_NAME" in
         echo ""
         echo "Available testcases:"
         echo "  measure-operators-4gpu"
-        echo "  measure-operators-deepep"
+        echo "  measure-operators-4gpu-cudagraph"
+        echo "  measure-operators-hybridep"
         echo "  measure-pp-vpp-4gpu"
         exit 1
         ;;

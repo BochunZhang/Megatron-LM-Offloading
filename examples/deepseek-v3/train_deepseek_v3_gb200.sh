@@ -95,7 +95,7 @@ ENABLE_CUDA_GRAPH=false
 DISPATCHER="hybridep"
 
 # args
-params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,cuda-graph:" -- "$@")
+params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,offload-activation,offload-weights" -- "$@")
 eval set -- "$params"
 
 while true; do
@@ -147,6 +147,18 @@ while true; do
             ;;
         --enable-cuda-graph)
             ENABLE_CUDA_GRAPH=true
+            shift 1
+            ;;
+        --offload-activation)
+            OFFLOAD_ACTIVATION=true
+            CPU_OFFLOADING=true
+            CPU_OFFLOADING_DOUBLE_BUFFERING=true
+            shift 1
+            ;;
+        --offload-weights)
+            OFFLOAD_WEIGHTS=true
+            CPU_OFFLOADING=true
+            CPU_OFFLOADING_DOUBLE_BUFFERING=true
             shift 1
             ;;
         --)
@@ -220,6 +232,36 @@ DISTRIBUTED_ARGS=(
     --master_addr $MASTER_ADDR 
     --master_port $MASTER_PORT
 )
+
+
+# default offload settings
+CPU_OFFLOADING=${CPU_OFFLOADING:-false}
+CPU_OFFLOADING_DOUBLE_BUFFERING=${CPU_OFFLOADING_DOUBLE_BUFFERING:-false}
+OFFLOAD_ACTIVATION=${OFFLOAD_ACTIVATION:-false}
+OFFLOAD_WEIGHTS=${OFFLOAD_WEIGHTS:-false}
+
+if [[ "$CPU_OFFLOADING" == "true"]]; then
+    CPU_OFFLOADING_LAYER=$NUM_LAYER
+else
+    CPU_OFFLOADING_LAYER=0
+fi
+
+CPU_OFFLOADING_LAYER
+# Generate deepseek.yaml config based on offload settings
+cat > $LOGS_PATH/deepseek.yaml << EOF
+# CPU Offloading Configuration
+model_parallel:
+  cpu_offloading: $CPU_OFFLOADING
+  cpu_offloading_num_layers: $CPU_OFFLOADING_LAYER
+  cpu_offloading_activations: $OFFLOAD_ACTIVATION
+  cpu_offloading_weights: $OFFLOAD_WEIGHTS
+  cpu_offloading_double_buffering: $CPU_OFFLOADING_DOUBLE_BUFFERING
+EOF
+
+echo "Generated deepseek.yaml with CPU offloading settings:"
+echo "  OFFLOAD_ACTIVATION: $OFFLOAD_ACTIVATION"
+echo "  OFFLOAD_WEIGHTS: $OFFLOAD_WEIGHTS"
+# cat deepseek.yaml
 
 MODEL_PARALLEL_ARGS=(
     --distributed-timeout-minutes 60 
@@ -345,6 +387,12 @@ case "$DISPATCHER" in
             --moe-token-dispatcher-type alltoall
             --moe-router-padding-for-quantization
         )
+        if [ "$ENABLE_CUDA_GRAPH" = true ]; then
+            MOE_ARGS+=(
+                --cuda-graph-impl transformer_engine
+                --cuda-graph-scope attn
+            )
+        fi
         ;;
     allgather)
         # allgather
@@ -352,6 +400,12 @@ case "$DISPATCHER" in
         MOE_ARGS+=(
             --moe-token-dispatcher-type allgather
         )
+        if [ "$ENABLE_CUDA_GRAPH" = true ]; then
+            MOE_ARGS+=(
+                --cuda-graph-impl transformer_engine
+                --cuda-graph-scope attn
+            )
+        fi
         ;;
 esac
 
@@ -384,6 +438,7 @@ TRAINING_ARGS=(
     --eval-interval 200 
     --init-method-std 0.02 
     --enable-experimental 
+    --yaml-cfg $LOGS_PATH/deepseek.yaml 
 )
 
 OPTIMIZER_ARGS=(
@@ -445,6 +500,9 @@ LOAD_ARGS=(
 )
 
 if [ $RANK -eq 0 ]; then
+    # Set `NVTE_NVTX_ENABLED=1` in the environment to enable NVTX range profiling in transformer_engine.
+    export NVTE_NVTX_ENABLED=1
+    
     PROFILE_ARGS=(
         --profile 
         --profile-ranks 0 1 2 3 
