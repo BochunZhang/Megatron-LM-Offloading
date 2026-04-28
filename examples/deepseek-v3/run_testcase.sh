@@ -336,8 +336,9 @@ case "$TESTCASE_NAME" in
         echo ""
         echo "Available testcases:"
         echo "  measure-operators-4gpu"
-        echo "  measure-operators-4gpu-cudagraph"
-        echo "  measure-operators-hybridep"
+        echo "  measure-operators-with-graph-4gpu"
+        echo "  measure-operators-hybridep-4gpu"
+        echo "  measure-operators-hybridep-offload-4gpu"
         echo "  measure-pp-vpp-4gpu"
         exit 1
         ;;
