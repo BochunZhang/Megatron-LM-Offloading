@@ -240,28 +240,6 @@ CPU_OFFLOADING_DOUBLE_BUFFERING=${CPU_OFFLOADING_DOUBLE_BUFFERING:-false}
 OFFLOAD_ACTIVATION=${OFFLOAD_ACTIVATION:-false}
 OFFLOAD_WEIGHTS=${OFFLOAD_WEIGHTS:-false}
 
-if [[ "$CPU_OFFLOADING" == "true"]]; then
-    CPU_OFFLOADING_LAYER=$NUM_LAYER
-else
-    CPU_OFFLOADING_LAYER=0
-fi
-
-CPU_OFFLOADING_LAYER
-# Generate deepseek.yaml config based on offload settings
-cat > $LOGS_PATH/deepseek.yaml << EOF
-# CPU Offloading Configuration
-model_parallel:
-  cpu_offloading: $CPU_OFFLOADING
-  cpu_offloading_num_layers: $CPU_OFFLOADING_LAYER
-  cpu_offloading_activations: $OFFLOAD_ACTIVATION
-  cpu_offloading_weights: $OFFLOAD_WEIGHTS
-  cpu_offloading_double_buffering: $CPU_OFFLOADING_DOUBLE_BUFFERING
-EOF
-
-echo "Generated deepseek.yaml with CPU offloading settings:"
-echo "  OFFLOAD_ACTIVATION: $OFFLOAD_ACTIVATION"
-echo "  OFFLOAD_WEIGHTS: $OFFLOAD_WEIGHTS"
-# cat deepseek.yaml
 
 MODEL_PARALLEL_ARGS=(
     --distributed-timeout-minutes 60 
@@ -438,7 +416,6 @@ TRAINING_ARGS=(
     --eval-interval 200 
     --init-method-std 0.02 
     --enable-experimental 
-    --yaml-cfg $LOGS_PATH/deepseek.yaml 
 )
 
 OPTIMIZER_ARGS=(

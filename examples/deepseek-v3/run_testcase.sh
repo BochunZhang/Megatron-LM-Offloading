@@ -64,6 +64,7 @@ run_measure_operators_4gpu() {
             --micro-batch-size $mbs
             --global-batch-size 128
             --num-expert 32
+            --num-layer 5
             --moe-freq "([0]*2+[1]*3)"
             --seq-length 4096
             --dispatcher alltoall
