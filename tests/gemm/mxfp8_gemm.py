@@ -83,13 +83,6 @@ def test_mxfp8_linear(
             params_dtype=torch.bfloat16,  # Match input dtype
         )
 
-    print(f"\n{'='*60}")
-    print(f"MXFP8 Linear Layer Forward Pass Test")
-    print(f"{'='*60}")
-    print(f"Input shape: {x.shape} [{x.dtype}]")
-    print(f"Weight shape: {linear.weight.shape} [{linear.weight.dtype}")
-    print(f"Recipe: {recipe}")
-
     # Move to GPU
     linear = linear.cuda()
 
@@ -102,6 +95,13 @@ def test_mxfp8_linear(
         dtype=torch.bfloat16,
         device="cuda"
     )
+
+    print(f"\n{'='*60}")
+    print(f"MXFP8 Linear Layer Forward Pass Test")
+    print(f"{'='*60}")
+    print(f"Input shape: {x.shape} [{x.dtype}]")
+    print(f"Weight shape: {linear.weight.shape} [{linear.weight.dtype}")
+    print(f"Recipe: {recipe}")
     
     if backward == True:
         # Simple MSE loss for demonstration
@@ -188,7 +188,7 @@ Examples:
     parser.add_argument(
         "--out-features",
         type=int,
-        default=None,
+        default=1536,
         help="Output dimension (must be divisible by 32 for MXFP8, defaults to hidden_size)",
     )
     parser.add_argument(

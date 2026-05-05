@@ -128,7 +128,6 @@ for mbs in "${BATCH[@]}"; do
                     --hidden_size "$hds"
                     --seq_len "$seq"
                     --out-features "$out"
-                    --output-path "$OUTPUT_FILE.xlsx"
                 )
 
                 ${NSYS_ARGS[@]} \
