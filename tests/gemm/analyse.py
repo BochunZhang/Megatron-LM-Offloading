@@ -316,23 +316,22 @@ def plot_results(results: List[Dict[str, Any]], output_path: str = 'result.pdf')
 
     title = ', '.join(title_parts) if title_parts else 'GEMM Performance'
 
-    min_idx = avg_tflops.index(min(avg_tflops))
     max_idx = avg_tflops.index(max(avg_tflops))
-
-    ratio = max(avg_tflops) / min(avg_tflops) if min(avg_tflops) > 0 else 0
+    ratio = max(avg_tflops) / avg_tflops[0] if avg_tflops[0] > 0 else 0
 
     fig, ax = plt.subplots(figsize=(8, 5), tight_layout=True)
 
     ax.plot(mbs_values, avg_tflops, 'o-', linewidth=2, markersize=8)
 
-    ax.scatter([mbs_values[min_idx]], [avg_tflops[min_idx]],
-               color='red', s=150, marker='v', zorder=5, label=f'Min TFLOPS (mbs={mbs_values[min_idx]})')
+    ax.scatter([mbs_values[0]], [avg_tflops[0]],
+               color='red', s=150, marker='v', zorder=5, label=f'Min MBS TFLOPS (mbs={mbs_values[0]})')
     ax.scatter([mbs_values[max_idx]], [avg_tflops[max_idx]],
                color='green', s=150, marker='^', zorder=5, label=f'Max TFLOPS (mbs={mbs_values[max_idx]})')
 
     ax.set_xlabel('MBS (Micro Batch Size)', fontsize=12, fontweight='bold')
     ax.set_ylabel('Average TFLOPS', fontsize=12, fontweight='bold')
-    ax.set_title(f'{title}\nMax/Min TFLOPS ratio: {ratio:.3f}', fontsize=12, fontweight='bold')
+    ax.set_xscale('log')
+    ax.set_title(f'{title}\nMax/Min MBS TFLOPS ratio: {ratio:.3f}', fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(loc='best')
 
