@@ -73,25 +73,35 @@ class TextOutput(Output):
             if len(t) == 5:
                 src, src_idx, dst, dst_idx, depth = t
                 
-                # some call is skipped
+                # some call is skipped, append to the stack
                 if depth - 1 > len(call_stack):
                     for _ in range(depth - len(call_stack) - 1):
                         call_stack.append(-1)
-                # some return is skipped
+                # some return is skipped, pop from the stack
                 elif depth - 1 < len(call_stack):
                     for _ in range(len(call_stack) - depth + 1):
-                        assert call_stack[-1] == -1
-                        call_stack.pop(-1)
+                        idx = call_stack.pop(-1)
+                        assert idx == -1
+
+                if src == '':
+                    for v in reversed(call_stack):
+                        if v != -1:
+                            idx = v
+                            break
+                else:
+                    idx = src_idx
+
                 # add call 
+                assert call_stack[-1] == -1 if src == '' else call_stack[-1] == src_idx
                 call_stack.append(dst_idx)
 
                 # debug
-                # print(call_stack)
+                # print(call_stack, idx)
 
                 names[dst_idx] = dst            # name
                 calls[dst_idx] = 0              # init
-                calle[dst_idx] = -1 * src_idx if src == '' else src_idx     # caller, name == '' 意味着这是一个 non-keep 节点
-                calls[src_idx] += 1             # src_func 调用了新的函数
+                calle[dst_idx] = -1 * idx if src == '' else idx     # caller, name == '' 意味着这是一个 non-keep 节点
+                calls[idx] += 1             # src_func 调用了新的函数
                 max_index = max(max_index, dst_idx)
 
                 node = {
@@ -100,18 +110,18 @@ class TextOutput(Output):
                     'func': []
                 }
                 nodes[dst_idx] = node
-                nodes[src_idx]['func'].append(node)
+                nodes[idx]['func'].append(node)
 
-            
             # return
             elif len(t) == 3:
                 fun, fun_idx, depth = t
                 if depth + 1 < len(call_stack):
                     # some return is skipped
                     for _ in range(len(call_stack) - depth - 1):
-                        assert call_stack[-1] == -1
-                        call_stack.pop(-1)
+                        idx = call_stack.pop()
+                        assert idx == -1
 
+                # print(f'fun = {fun}, fun_idx = {fun_idx}, call_stack = {call_stack}')
                 idx = call_stack.pop(-1)
                 exits[fun_idx] = max_index
 
@@ -124,37 +134,46 @@ class TextOutput(Output):
             else:
                 assert False
 
+        # print(calle)
+        # print(calls)
+
+        appends = {1: ""}
+
         with open(self.callgraph_txt, 'w') as f:
             f.write(f"{names[1]}\n")
             keys = sorted(names.keys())
             assert keys[0] == 1
             for i in range(1, len(keys)):
+                if calle[keys[i]] < 0:
+                    append = "... "
+                    appends[keys[i]] = "    "
+                    calle[keys[i]] = -1 * calle[keys[i]]
+                else:
+                    append = ""
+                    appends[keys[i]] = ""
                 for j in range(i):
-                    if calle[keys[i]] < 0:
-                        append = "... "
-                        calle[keys[i]] = -1 * calle[keys[i]]
-                    else:
-                        append = ""
+                    # print(keys[i], keys[j], append)
                     if calle[keys[i]] == keys[j]:
                         if calls[keys[j]] == 1:
-                            f.write("└── ")
+                            f.write(f"{appends[keys[j]]}└── ")
                         else:
-                            f.write("├── ")
+                            f.write(f"{appends[keys[j]]}├── ")
                         calls[keys[j]] -= 1
                     else:
                         if calls[keys[j]] == 0:
-                            f.write("    ")
+                            f.write(f"{appends[keys[j]]}    ")
                         elif calls[keys[j]] > 0:
-                            f.write("|   ")
+                            f.write(f"{appends[keys[j]]}|   ")
                     if exits[keys[j]] == keys[i]:
                         calls[keys[j]] = -1
                 if exits[keys[i]] == keys[i]:
                     calls[keys[i]] = -1
+                # print(f"{append}{names[keys[i]]}")
                 f.write(f"{append}{names[keys[i]]}\n")
 
         with open(self.callgraph_json, 'w', encoding="utf-8") as j:
-            print("logging...")
-            print(main)
+            # print("logging...")
+            # print(main)
             json.dump(main, j, indent=4, ensure_ascii=False)
 
 

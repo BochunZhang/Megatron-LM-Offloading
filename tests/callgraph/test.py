@@ -4,6 +4,13 @@ output = TextOutput(path='./logs')
 
 config = Config()
 
+config.trace_filter.exclude.extend(
+    [
+        'main',
+        # 'func_b',
+    ]
+)
+
 
 def func_a(times=2):
     if times > 0:

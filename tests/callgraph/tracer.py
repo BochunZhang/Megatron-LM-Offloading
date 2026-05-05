@@ -230,7 +230,8 @@ class TraceProcessor(Thread):
                             self.func_memory_in[full_name],
                         )
                 func_index = self.index_stack.pop(-1)
-                self.traces.append([full_name, func_index, len(self.call_stack)])
+                if full_name != '':
+                    self.traces.append([full_name, func_index, len(self.call_stack)])
 
 
     def is_module_stdlib(self, file_name):
