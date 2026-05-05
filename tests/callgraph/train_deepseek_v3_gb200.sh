@@ -369,7 +369,6 @@ TRAINING_ARGS=(
     --eval-interval 200 
     --init-method-std 0.02 
     --enable-experimental 
-    --yaml-cfg $LOGS_PATH/deepseek.yaml 
 )
 
 OPTIMIZER_ARGS=(

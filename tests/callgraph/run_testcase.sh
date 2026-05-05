@@ -47,10 +47,10 @@ run_measure_operators_4gpu() {
     echo "  - Layer Layout: 2 dense + 3 MoE (total 5 layers)"
     echo "  - Experts: 32"
     echo "  - CUDA Graph: disabled"
-    echo "  - Micro Batch Sizes: 1, 2, 4, 8"
+    echo "  - Micro Batch Sizes: 4"
     echo "========================================"
 
-    local mbs_values=(1 2 4 8)
+    local mbs_values=(4)
 
     for mbs in "${mbs_values[@]}"; do
         echo ""
@@ -102,7 +102,7 @@ run_measure_operators_with_graph_4gpu() {
     echo "  - Micro Batch Sizes: 1, 2, 4, 8"
     echo "========================================"
 
-    local mbs_values=(1 2 4 8)
+    local mbs_values=(4)
 
     for mbs in "${mbs_values[@]}"; do
         echo ""
