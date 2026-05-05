@@ -12,6 +12,7 @@ config.trace_filter.exclude.extend([
     "argparse*",
     "*<genexpr>",
     "*<lambda>",
+    "tokenize*"
 ])
 config.trace_filter.include = [
     "__main__",
@@ -19,7 +20,6 @@ config.trace_filter.include = [
     "torch*",
     "gpt_builder*",
     "model_provider*",
-    "tokenize*",
     "subprocess*",
     "MCore*",
 
