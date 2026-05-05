@@ -106,7 +106,7 @@ run_mxfp8_linear() {
 
     # Build profiling arguments if enabled
     local nsys_args=()
-    if [[ "$profile" == true ]]; then
+    if [[ "$PROFILE" == true ]]; then
         nsys_args=(
             nsys profile -s none -t nvtx,cuda,cudnn,cublas
             --cudabacktrace=all
