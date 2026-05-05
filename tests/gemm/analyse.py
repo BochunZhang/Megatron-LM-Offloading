@@ -320,7 +320,7 @@ def main():
     )
     parser.add_argument(
         '-o', '--output',
-        help='Output JSON file for detailed results'
+        help='Path for detailed results in JSON/EXCEL format'
     )
     parser.add_argument(
         '--summary',
@@ -364,7 +364,8 @@ def main():
         print_summary(results)
 
     if args.output:
-        with open(args.output, 'w') as f:
+        os.makedirs(args.output, exist_ok=True)
+        with open(os.path.join(args.output, "result.json"), 'w') as f:
             json.dump(results, f, indent=2)
         print(f"\nDetailed results saved to: {args.output}")
 
