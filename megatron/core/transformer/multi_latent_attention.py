@@ -684,8 +684,6 @@ class MLASelfAttention(MultiLatentAttention):
             # q: [num_tokens, n, q_head_dim]
             q = q.view(*q.size()[:-1], self.num_attention_heads_per_partition, self.q_head_dim)
 
-            nvtx_range_push(suffix="linear_kv_up_proj")
-
             # [num_tokens, qk_pos_emb_head_dim] -> [num_tokens, 1, qk_pos_emb_head_dim]
             k_pos_emb = torch.unsqueeze(k_pos_emb, -2)
 

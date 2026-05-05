@@ -56,6 +56,11 @@ from .grad_scaler import MegatronGradScaler
 from .optimizer import MixedPrecisionOptimizer, _zero_grad_group_helper, param_group_identifier_keys
 from .optimizer_config import OptimizerConfig
 
+from megatron.core.utils import (
+    nvtx_range_push,
+    nvtx_range_pop,
+)
+
 logger = getLogger(__name__)
 
 
@@ -2399,6 +2404,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
 
         # Utility method for copying group grads.
         def copy_group_grads(model_groups, shard_main_groups):
+            nvtx_range_push(suffix='copy_group_grads')
             for model_group, shard_main_group in zip(model_groups, shard_main_groups):
                 for model_param, shard_main_param in zip(model_group, shard_main_group):
 
@@ -2417,6 +2423,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                         shard_main_param.decoupled_grad = shard_model_grad
                     else:
                         shard_main_param.grad = shard_model_grad.float()
+            nvtx_range_pop(suffix='copy_group_grads')
 
         # Copy model groups to shard groups.
         if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
@@ -2438,8 +2445,10 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
             return
 
         if self.ddp_config.use_megatron_fsdp:
+            nvtx_range_push(suffix='copy_main_weights_to_model_weights')
             for model_chunk in self.model_chunks:
                 model_chunk.param_and_grad_buffer.copy_main_weights_to_model_weights()
+            nvtx_range_pop(suffix='copy_main_weights_to_model_weights')
             return
 
         # When using precision-aware optimizer, main params are held by self.optimizer. It will also
@@ -2447,6 +2456,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         if self.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8:
             return
 
+        nvtx_range_push(suffix='_copy_main_params_to_model_params')
         quantize_param_shard(
             *self._get_fp8_params_and_shard_fp32_from_fp8(), self.data_parallel_group
         )
@@ -2478,6 +2488,9 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         copy_group_params(self.shard_fp32_from_float16_groups, self.model_float16_groups)
         copy_group_params(self.shard_fp32_groups, self.model_fp32_groups)
 
+        nvtx_range_pop(suffix='_copy_main_params_to_model_params')
+
+
     def _copy_main_params_to_param_buffer(self):
         """
         This function is only used for MXFP8 params.
@@ -2485,6 +2498,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         param buffer is not mapped to model params for MXFP8 case.
 
         """
+        nvtx_range_push(suffix='_copy_main_params_to_param_buffer')
         for shard_main_group, model_group in zip(
             self.shard_fp32_from_float16_groups, self.model_float16_groups
         ):
@@ -2501,6 +2515,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                 shard_param_buffer = param_buffer.view(-1)[world_range.start : world_range.end]
 
                 shard_param_buffer.copy_(shard_main_param)
+        nvtx_range_pop(suffix='_copy_main_params_to_param_buffer')
 
     def _build_model_param_to_state_dict_param_map(self, state_dict):
         """Create a map from model params to tensors in state_dict based on their names."""
@@ -2602,6 +2617,8 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
         """
         update_successful = super().step_with_ready_grads()
 
+        nvtx_range_push(suffix='param_sync')
+
         timers = self.config.timers
         if timers is not None:
             timers('params-all-gather', log_level=1).start(barrier=self.config.barrier_with_L1_time)
@@ -2619,5 +2636,7 @@ class DistributedOptimizer(MixedPrecisionOptimizer):
                     model_chunk.start_param_sync()
         if timers is not None:
             timers('params-all-gather').stop()
+
+        nvtx_range_pop(suffix='param_sync')
 
         return update_successful

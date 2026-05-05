@@ -51,6 +51,11 @@ from .clip_grads import clip_grad_by_total_norm_fp32, count_zeros_fp32, get_grad
 from .grad_scaler import MegatronGradScaler
 from .optimizer_config import OptimizerConfig
 
+from megatron.core.utils import (
+    nvtx_range_push,
+    nvtx_range_pop,
+)
+
 logger = getLogger(__name__)
 
 
@@ -194,10 +199,12 @@ class MegatronOptimizer(ABC):
     @torch.no_grad()
     def get_grad_norm(self):
         """Compute and return grad norm."""
+        nvtx_range_push(suffix='get_grad_norm')
         grads_for_norm = self.get_main_grads_for_grad_norm()
         total_norm = get_grad_norm_fp32(
             grads_for_norm, grad_stats_parallel_group=self.get_grad_stats_parallel_group()
         )
+        nvtx_range_pop(suffix='get_grad_norm')
         return total_norm
 
     def clip_grad_norm(self, clip_grad: float) -> float:
@@ -495,6 +502,7 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
 
     def _unscale_main_grads_and_check_for_nan(self):
 
+        nvtx_range_push(suffix='unscale_main_grads_and_check_for_nan')
         # Collect main grads.
         if not self.is_stub_optimizer:
             main_grads = self._collect_main_grad_data_for_unscaling()
@@ -517,6 +525,7 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
 
         # Check for nan.
         found_inf_flag = self.found_inf.item() > 0
+        nvtx_range_pop(suffix='unscale_main_grads_and_check_for_nan')
 
         return found_inf_flag
 
@@ -566,7 +575,9 @@ class MixedPrecisionOptimizer(MegatronOptimizer):
                 barrier=self.config.barrier_with_L1_time
             )
         if not self.is_stub_optimizer:
+            nvtx_range_push(suffix='step')
             self.optimizer.step()
+            nvtx_range_pop(suffix='step')
         if timers is not None:
             timers('optimizer-inner-step').stop()
 
@@ -1270,6 +1281,7 @@ class ChainedOptimizer(MegatronOptimizer):
     def get_grad_norm(self):
         if len(self.chained_optimizers) == 1:
             return self.chained_optimizers[0].get_grad_norm()
+        nvtx_range_push(suffix='get_grad_norm')
         if self.grads_states_parallel_group_is_shared():
             grads_for_norm = []
             for optimizer in self.chained_optimizers:
@@ -1283,6 +1295,7 @@ class ChainedOptimizer(MegatronOptimizer):
                 _grad_norm = optimizer.get_grad_norm()
                 grad_norms += [_grad_norm if _grad_norm else 0.0]
             grad_norm = math.sqrt(sum([x**2 for x in grad_norms]))
+        nvtx_range_pop(suffix='get_grad_norm')
         return grad_norm
 
     @torch.no_grad()
@@ -1307,6 +1320,9 @@ class ChainedOptimizer(MegatronOptimizer):
     @torch.no_grad()
     def step(self):
         """ChainedOptimizer will step all optimizers one by one."""
+
+        nvtx_range_push(suffix='step')
+
         found_inf_flag = self.prepare_grads()
         if found_inf_flag:
             return False, None, None
@@ -1321,6 +1337,7 @@ class ChainedOptimizer(MegatronOptimizer):
             if len(parameters) == 0:
                 continue
             if optimizer.config.clip_grad > 0.0:
+                nvtx_range_push(suffix='clip_grad_by_total_norm_fp32')
                 clip_grad_by_total_norm_fp32(
                     parameters,
                     max_norm=optimizer.config.clip_grad,
@@ -1329,11 +1346,14 @@ class ChainedOptimizer(MegatronOptimizer):
                         optimizer.config.use_precision_aware_optimizer_no_fp8_or_ds_fp8
                     ),
                 )
+                nvtx_range_pop(suffix='clip_grad_by_total_norm_fp32')
 
         # Count the zeros in the grads.
         num_zeros_in_grad = self.count_zeros() if self.config.log_num_zeros_in_grad else None
 
         update_successful = self.step_with_ready_grads()
+
+        nvtx_range_pop(suffix='step')
 
         return update_successful, grad_norm, num_zeros_in_grad
 
