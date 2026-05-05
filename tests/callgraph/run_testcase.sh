@@ -44,13 +44,13 @@ run_measure_operators_4gpu() {
     echo "  - DP: 4, EP: 4"
     echo "  - Dispatcher: alltoall"
     echo "  - Sequence Length: 4096"
-    echo "  - Layer Layout: 2 dense + 3 MoE (total 5 layers)"
+    echo "  - Layer Layout: 1 dense + 1 MoE (total 2 layers)"
     echo "  - Experts: 32"
     echo "  - CUDA Graph: disabled"
     echo "  - Micro Batch Sizes: 4"
     echo "========================================"
 
-    local mbs_values=(4)
+    local mbs_values=(2)
 
     for mbs in "${mbs_values[@]}"; do
         echo ""
@@ -62,10 +62,10 @@ run_measure_operators_4gpu() {
             --pp 1
             --ep 4
             --micro-batch-size $mbs
-            --global-batch-size 128
+            --global-batch-size 16
             --num-expert 32
-            --num-layer 5
-            --moe-freq "([0]*2+[1]*3)"
+            --num-layer 2
+            --moe-freq "([0]*1+[1]*1)"
             --seq-length 4096
             --dispatcher alltoall
         )
