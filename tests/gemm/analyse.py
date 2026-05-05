@@ -430,6 +430,9 @@ def main():
             print(f"Error: {args.json_path} is not a .json file or directory")
             return 1
 
+    # sort result
+    results.sort(key=lambda r: r['parameters']['mbs'])
+
     if args.summary:
         print_summary(results)
 
