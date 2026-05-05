@@ -161,8 +161,8 @@ case "$TEST" in
         for mbs in "${BATCH[@]}"; do
             run_mxfp8_linear $PY_SCRIPT 'linear_q_down_proj'  'linear'      1 7168  1536  4096
             run_mxfp8_linear $PY_SCRIPT 'linear_kv_down_proj' 'linear'      1 7168  576   4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_q_up_proj'    'norm_linear' 1 7168  24576 4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' 1 7168  32768 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_q_up_proj'    'norm_linear' 1 1536  24576 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' 1 512   32768 4096
             run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      1 16384 7168  4096
         done
         ;;
