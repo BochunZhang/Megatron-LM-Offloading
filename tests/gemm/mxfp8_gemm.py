@@ -12,9 +12,10 @@ Requirements:
 - PyTorch 2.1+
 
 Usage:
-    python mxfp8_linear_test.py --case forward --batch_size 16 --seq_len 128 --hidden_size 768
-    python mxfp8_linear_test.py --case training --batch_size 16 --seq_len 128 --hidden_size 768 --num_epochs 5
-    python mxfp8_linear_test.py --case graph --batch_size 16 --seq_len 128 --hidden_size 768
+    python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10"
+    python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --graph"
+    python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --backward"
+    python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --graph --backward"
 """
 
 import argparse
@@ -144,10 +145,10 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out-features 1532 --iterations 10"
-  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out-features 1532 --iterations 10 --graph"
-  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out-features 1532 --iterations 10 --backward"
-  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out-features 1532 --iterations 10 --graph --backward"
+  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10"
+  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --graph"
+  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --backward"
+  python mxfp8_linear_test.py --batch_size 1 --seq_len 4096 --hidden_size 7168 --out_features 1532 --iterations 10 --graph --backward"
 """,
     )
     
@@ -186,7 +187,7 @@ Examples:
         help="Hidden size (must be divisible by 32 for MXFP8, default: 7168)",
     )
     parser.add_argument(
-        "--out-features",
+        "--out_features",
         type=int,
         default=1536,
         help="Output dimension (must be divisible by 32 for MXFP8, defaults to hidden_size)",

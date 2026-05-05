@@ -123,11 +123,10 @@ for mbs in "${BATCH[@]}"; do
 
                 PYTHON_ARGS=(
                     python3 "$PY_SCRIPT"
-                    --case forward
+                    --seq_len "$seq"
                     --batch_size "$mbs"
                     --hidden_size "$hds"
-                    --seq_len "$seq"
-                    --out-features "$out"
+                    --out_features "$out"
                 )
 
                 ${NSYS_ARGS[@]} \
