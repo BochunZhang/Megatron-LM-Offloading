@@ -168,11 +168,11 @@ case "$TEST" in
             run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      $mbs 16384 7168  4096
         done
 
-        python3 $AN_SCRIPT --path test/gemm/results/linear_q_down_proj.linear.forward  -o test/gemm/analyse/linear_q_down_proj.linear.forward
-        python3 $AN_SCRIPT --path test/gemm/results/linear_kv_down_proj.linear.forward -o test/gemm/analyse/linear_kv_down_proj.linear.forward
-        python3 $AN_SCRIPT --path test/gemm/results/linear_q_up_proj.norm_linear.forward -o test/gemm/analyse/linear_q_up_proj.norm_linear.forward
-        python3 $AN_SCRIPT --path test/gemm/results/linear_kv_up_proj.norm_linear.forward -o test/gemm/analyse/linear_kv_up_proj.norm_linear.forward
-        python3 $AN_SCRIPT --path test/gemm/results/linear_proj.linear.forward -o test/gemm/analyse/linear_proj.linear.forward
+        python3 $AN_SCRIPT --path tests/gemm/results/linear_q_down_proj.linear.forward -o tests/gemm/analyse/linear_q_down_proj.linear.forward --plot
+        python3 $AN_SCRIPT --path tests/gemm/results/linear_kv_down_proj.linear.forward -o tests/gemm/analyse/linear_kv_down_proj.linear.forward --plot
+        python3 $AN_SCRIPT --path tests/gemm/results/linear_q_up_proj.norm_linear.forward -o tests/gemm/analyse/linear_q_up_proj.norm_linear.forward --plot
+        python3 $AN_SCRIPT --path tests/gemm/results/linear_kv_up_proj.norm_linear.forward -o tests/gemm/analyse/linear_kv_up_proj.norm_linear.forward --plot
+        python3 $AN_SCRIPT --path tests/gemm/results/linear_proj.linear.forward -o tests/gemm/analyse/linear_proj.linear.forward --plot
         ;;
     *)
         echo "Fatal: No matching testcase for '$TEST'"
