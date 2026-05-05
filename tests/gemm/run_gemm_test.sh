@@ -72,6 +72,8 @@ case "$RECIPE" in
         ;;
 esac
 
+AN_SCRIPT="tests/gemm/analyse.py"
+
 
 
 # Check if python script exists
@@ -159,12 +161,18 @@ case "$TEST" in
     operator)
         BATCH=(1 2 4 6 8 16 32 64)
         for mbs in "${BATCH[@]}"; do
-            run_mxfp8_linear $PY_SCRIPT 'linear_q_down_proj'  'linear'      1 7168  1536  4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_kv_down_proj' 'linear'      1 7168  576   4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_q_up_proj'    'norm_linear' 1 1536  24576 4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' 1 512   32768 4096
-            run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      1 16384 7168  4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_q_down_proj'  'linear'      $mbs 7168  1536  4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_kv_down_proj' 'linear'      $mbs 7168  576   4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_q_up_proj'    'norm_linear' $mbs 1536  24576 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' $mbs 512   32768 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      $mbs 16384 7168  4096
         done
+
+        python3 $AN_SCRIPT --path test/gemm/results/linear_q_down_proj.linear.forward  -o test/gemm/analyse/linear_q_down_proj.linear.forward
+        python3 $AN_SCRIPT --path test/gemm/results/linear_kv_down_proj.linear.forward -o test/gemm/analyse/linear_kv_down_proj.linear.forward
+        python3 $AN_SCRIPT --path test/gemm/results/linear_q_up_proj.norm_linear.forward -o test/gemm/analyse/linear_q_up_proj.norm_linear.forward
+        python3 $AN_SCRIPT --path test/gemm/results/linear_kv_up_proj.norm_linear.forward -o test/gemm/analyse/linear_kv_up_proj.norm_linear.forward
+        python3 $AN_SCRIPT --path test/gemm/results/linear_proj.linear.forward -o test/gemm/analyse/linear_proj.linear.forward
         ;;
     *)
         echo "Fatal: No matching testcase for '$TEST'"
