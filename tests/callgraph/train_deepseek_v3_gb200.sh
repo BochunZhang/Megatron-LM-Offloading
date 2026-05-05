@@ -458,7 +458,7 @@ numarun \
 ${NSYS_ARGS[@]} \
 torchrun \
 ${DISTRIBUTED_ARGS[@]} \
-./pretrain_gpt.py \
+./tests/callgraph/pretrain_gpt.py \
 ${MODEL_PARALLEL_ARGS[@]} \
 ${GPT_MODEL_ARGS[@]} \
 ${TRAINING_ARGS[@]} \
