@@ -10,6 +10,9 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 
 def parse_filename_params(filename: str) -> Dict[str, int]:
@@ -276,6 +279,68 @@ def analyze_json_directory(directory: str) -> List[Dict[str, Any]]:
     return results
 
 
+def plot_results(results: List[Dict[str, Any]], output_path: str = 'result.pdf'):
+    """
+    Plot mbs vs average tflops for results with different mbs values.
+    """
+    if not results or len(results) < 2:
+        print("Not enough results to plot (need at least 2)")
+        return
+
+    valid_results = []
+    for result in results:
+        if 'error' in result:
+            continue
+        if 'gemm_events' not in result:
+            continue
+        valid_results.append(result)
+
+    if len(valid_results) < 2:
+        print(f"Not enough valid results to plot (found {len(valid_results)})")
+        return
+
+    mbs_values = [r['parameters']['mbs'] for r in valid_results]
+    avg_tflops = [r['gemm_events']['avg_tflops'] for r in valid_results]
+
+    unique_mbs = sorted(set(mbs_values))
+    if len(unique_mbs) < 2:
+        print("Not enough unique mbs values to plot (found 1)")
+        return
+
+    params_to_check = ['seq_len', 'hidden_size', 'output_size']
+    title_parts = []
+    for param in params_to_check:
+        values = [r['parameters'][param] for r in valid_results]
+        if all(v == values[0] for v in values):
+            title_parts.append(f"{param}={values[0]}")
+
+    title = ', '.join(title_parts) if title_parts else 'GEMM Performance'
+
+    min_idx = avg_tflops.index(min(avg_tflops))
+    max_idx = avg_tflops.index(max(avg_tflops))
+
+    ratio = max(avg_tflops) / min(avg_tflops) if min(avg_tflops) > 0 else 0
+
+    fig, ax = plt.subplots(figsize=(8, 5), tight_layout=True)
+
+    ax.plot(mbs_values, avg_tflops, 'o-', linewidth=2, markersize=8)
+
+    ax.scatter([mbs_values[min_idx]], [avg_tflops[min_idx]],
+               color='red', s=150, marker='v', zorder=5, label=f'Min TFLOPS (mbs={mbs_values[min_idx]})')
+    ax.scatter([mbs_values[max_idx]], [avg_tflops[max_idx]],
+               color='green', s=150, marker='^', zorder=5, label=f'Max TFLOPS (mbs={mbs_values[max_idx]})')
+
+    ax.set_xlabel('MBS (Micro Batch Size)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Average TFLOPS', fontsize=12, fontweight='bold')
+    ax.set_title(f'{title}\nMax/Min TFLOPS ratio: {ratio:.3f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='best')
+
+    plt.savefig(output_path, format='pdf', bbox_inches='tight')
+    plt.close()
+    print(f"Plot saved to: {output_path}")
+
+
 def print_summary(results: List[Dict[str, Any]]):
     """
     Print a summary of analysis results.
@@ -327,6 +392,11 @@ def main():
         action='store_true',
         help='Print summary to stdout'
     )
+    parser.add_argument(
+        '--plot',
+        action='store_true',
+        help='Generate mbs vs tflops plot and save as result.pdf'
+    )
 
     args = parser.parse_args()
 
@@ -362,6 +432,10 @@ def main():
 
     if args.summary:
         print_summary(results)
+
+    if args.plot:
+        plot_output = os.path.join(args.output, 'result.pdf') if args.output else 'result.pdf'
+        plot_results(results, plot_output)
 
     if args.output:
         os.makedirs(args.output, exist_ok=True)
