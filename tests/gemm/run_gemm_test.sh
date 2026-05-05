@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --backward)
-            BACKWARD=train
+            TRAIN=train
             shift
             ;;
         --profile)
@@ -129,7 +129,7 @@ run_mxfp8_linear() {
         --out_features "$out"
     )
 
-    if [ "$backward" = true ]; then
+    if [ "$TRAIN" = 'train' ]; then
         python_args+=(
             --backward
         )
@@ -153,7 +153,7 @@ case "$TEST" in
         ;;
 
     normal)
-        run_mxfp8_linear $PY_SCRIPT 'gemm' 'norm_linear' 1 7168 1536 4096
+        run_mxfp8_linear $PY_SCRIPT 'gemm' 'norm_linear' 1 7168  24576 4096
         ;;    
 
     operator)
