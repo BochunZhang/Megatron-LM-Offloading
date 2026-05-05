@@ -54,7 +54,7 @@ def convert_nsys_to_json(nsys_path: str) -> Optional[str]:
         return json_path
 
     try:
-        cmd = ['nsys', 'export', '-t', 'json', nsys_path, '-o', json_path]
+        cmd = ['nsys', 'export', '-t', 'json', nsys_path, '-o', json_path, '--separate-strings=true']
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         if os.path.exists(json_path):
             return json_path
