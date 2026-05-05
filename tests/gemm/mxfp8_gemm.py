@@ -38,11 +38,12 @@ def check_mxfp8_support():
 
 
 def test_mxfp8_linear(
-    batch_size: int,
-    seq_len: int,
-    hidden_size: int,
-    out_features: int,
     name: str = "gemm",
+    norm: Optional[str] = None,
+    batch_size: int = 1,
+    seq_len: int = 4096,
+    hidden_size: int = 7168,
+    out_features: int = 1536,
     num_iterations: int = 10,
     graph: bool = False,
     backward: bool = False,
@@ -76,13 +77,23 @@ def test_mxfp8_linear(
         recipe = MXFP8BlockScaling(fp8_format=Format.HYBRID)
 
     with fp8_autocast(enabled=True, fp8_recipe=recipe):
-        linear = te.Linear(
-            in_features=hidden_size,
-            out_features=out_features,
-            bias=True,
-            name=name,
-            params_dtype=torch.bfloat16,  # Match input dtype
-        )
+        if norm == None:
+            linear = te.Linear(
+                in_features=hidden_size,
+                out_features=out_features,
+                bias=False,
+                name=name,
+                params_dtype=torch.bfloat16,  # Match input dtype
+            )
+        else:
+            linear = te.LayerNormLinear(
+                in_features=hidden_size,
+                out_features=out_features,
+                normalization=norm,
+                bias=False,
+                name=name,
+                params_dtype=torch.bfloat16,  # Match input dtype
+            )
 
     # Move to GPU
     linear = linear.cuda()
@@ -138,6 +149,129 @@ def test_mxfp8_linear(
 
     print("End!")
 
+# def test_mxfp8_atten(
+#     name: str = "atten",
+#     attn: bool = False,
+#     norm: bool = False,
+#     batch_size: int = 1,
+#     seq_len: int = 4096,
+#     hidden_size: int = 7168,
+#     out_features: int = 1536,
+#     atten_head: int = 128,
+#     kv_channels: int = 192,
+#     num_iterations: int = 10,
+#     graph: bool = False,
+#     backward: bool = False,
+#     learning_rate: float = 1e-3,
+# ):
+#     """
+#     Test MXFP8 Linear layer forward pass.
+
+#     Parameters
+#     ----------
+#     batch_size : int
+#         Batch size
+#     seq_len : int
+#         Sequence length
+#     hidden_size : int
+#         Input dimension (must be divisible by 32 for MXFP8)
+#     out_features : int
+#         Output dimension (must be divisible by 32 for MXFP8, defaults to hidden_size)
+#     num_iterations : int
+#         Number of warmup iterations
+#     """
+
+#     # Ensure dimensions are divisible by 32 for MXFP8
+#     assert hidden_size % 32 == 0, "hidden_size must be divisible by 32 for MXFP8"
+#     assert out_features % 32 == 0, "out_features must be divisible by 32 for MXFP8"
+
+#     # Create Linear layer with MXFP8
+#     if backward == False:
+#         recipe = MXFP8BlockScaling(fp8_format=Format.E4M3)
+#     else:
+#         recipe = MXFP8BlockScaling(fp8_format=Format.HYBRID)
+
+#     with fp8_autocast(enabled=True, fp8_recipe=recipe):
+#         if attn == True:
+#             gemm = te.DotProductAttention(
+#                 num_attention_heads=atten_head,
+#                 kv_channels=kv_channels,
+#                 attention_dropout=0.0,
+#                 attn_mask_type="causal",
+#                 qkv_format = "sbhd",
+#             )
+
+#         elif attn == False:
+#             gemm = te.Linear(
+#                 in_features=hidden_size,
+#                 out_features=out_features,
+#                 bias=False,
+#                 name=name,
+#                 params_dtype=torch.bfloat16,  # Match input dtype
+#             )
+#         else:
+#             gemm = te.LayerNormLinear(
+#                 in_features=hidden_size,
+#                 out_features=out_features,
+#                 bias=False,
+#                 name=name,
+#                 params_dtype=torch.bfloat16,  # Match input dtype
+#             )
+
+#     # Move to GPU
+#     gemm = gemm.cuda()
+
+#     # Create random input
+#     # Shape: [seq_len, batch_size, hidden_size] (s, b, h)
+#     x = torch.randn(
+#         seq_len, 
+#         batch_size, 
+#         hidden_size,
+#         dtype=torch.bfloat16,
+#         device="cuda"
+#     )
+
+#     print(f"\n{'='*60}")
+#     print(f"MXFP8 Linear Layer Forward Pass Test")
+#     print(f"{'='*60}")
+#     print(f"Input shape: {x.shape} [{x.dtype}]")
+#     print(f"Weight shape: {linear.weight.shape} [{linear.weight.dtype}")
+#     print(f"Recipe: {recipe}")
+    
+#     if backward == True:
+#         # Simple MSE loss for demonstration
+#         criterion = torch.nn.MSELoss()
+#         optimizer = torch.optim.AdamW(linear.parameters(), lr=learning_rate)
+
+#         t = torch.randn(
+#             seq_len, 
+#             batch_size, 
+#             hidden_size,
+#             dtype=torch.bfloat16,
+#             device="cuda"
+#         )
+
+#     if graph == True:
+#         from transformer_engine.pytorch.graph import make_graphed_callables
+#         linear = make_graphed_callables(
+#             linear,
+#             (x,),
+#         )
+
+#     # Warmup iterations
+#     with fp8_autocast(enabled=True, fp8_recipe=recipe):
+#         for _ in range(num_iterations):
+#             y = linear(x)
+#             if backward == True:
+#                 loss = criterion(y, t)
+#                 optimizer.zero_grad()
+#                 loss.backward()
+#                 optimizer.step()
+
+#     torch.cuda.synchronize()
+
+#     print("End!")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -155,8 +289,20 @@ Examples:
     parser.add_argument(
         "--name",
         type=str,
-        default="gemm",
+        default='gemm',
         help="GEMM name, e.g. linear_q_down_proj",
+    )
+    parser.add_argument(
+        "--operator",
+        type=str,
+        default='linear',
+        help='chose from ["linear", "norm_linear", "attention"]'
+    )
+    parser.add_argument(
+        "--norm",
+        type=str,
+        default='linear',
+        help='chose from ["linear", "norm_linear", "attention"]'
     )
     parser.add_argument(
         "--backward",
@@ -230,21 +376,32 @@ Examples:
     if args.out_features is not None and args.out_features % 32 != 0:
         raise ValueError(f"out_features must be divisible by 32 for MXFP8, got {args.out_features}")
 
-    # Collect results for Excel output
-    all_results = []
-
     # Run test
-    test_mxfp8_linear(
-        batch_size=args.batch_size,
-        seq_len=args.seq_len,
-        hidden_size=args.hidden_size,
-        out_features=args.out_features,
-        name=args.name,
-        num_iterations=args.iterations,
-        graph=args.graph,
-        backward=args.backward,
-        learning_rate=args.learning_rate,
-    )
+    if args.operator == 'linear':
+        test_mxfp8_linear(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            hidden_size=args.hidden_size,
+            out_features=args.out_features,
+            name=args.name,
+            num_iterations=args.iterations,
+            graph=args.graph,
+            backward=args.backward,
+            learning_rate=args.learning_rate,
+        )
+    elif args.operator == 'norm_linear':
+        test_mxfp8_linear(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            hidden_size=args.hidden_size,
+            out_features=args.out_features,
+            name=args.name,
+            norm='RMSNorm',
+            num_iterations=args.iterations,
+            graph=args.graph,
+            backward=args.backward,
+            learning_rate=args.learning_rate,
+        )
 
     print(f"\n{'='*60}")
     print(f"MXFP8 test(s) completed successfully!")

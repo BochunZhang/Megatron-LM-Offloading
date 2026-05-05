@@ -9,8 +9,10 @@ set -e
 
 # Default values
 RECIPE="mxfp8"
-TEST="batch"
+TEST="forward"
+GRAPH=false
 PROFILE=false
+TRAIN=forward
 OUTPUT_DIR="tests/gemm/results"
 
 # Parse arguments
@@ -24,6 +26,14 @@ while [[ $# -gt 0 ]]; do
             TEST="$2"
             shift 2
             ;;
+        --graph)
+            GRAPH=true
+            shift
+            ;;
+        --backward)
+            BACKWARD=train
+            shift
+            ;;
         --profile)
             PROFILE=true
             shift
@@ -32,13 +42,12 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 --recipe <recipe> --test <test> [--profile]"
             echo ""
             echo "Options:"
+            echo "  --test      Test type: 'linear' 'normal' or 'operator' (sweep operator and batch size)"
             echo "  --recipe    Recipe type (e.g., mxfp8)"
-            echo "  --test      Test type: 'batch' (batch size sweep) or single test name (forward, training, graph)"
             echo "  --profile   Enable Nsight Systems profiling"
             echo ""
             echo "Examples:"
-            echo "  $0 --recipe mxfp8 --test batch --profile"
-            echo "  $0 --recipe mxfp8 --test forward"
+            echo "  $0 --recipe mxfp8 --test demo --profile"
             exit 0
             ;;
         *)
@@ -64,21 +73,6 @@ case "$RECIPE" in
 esac
 
 
-# test config
-case "$TEST" in
-    batch)
-        BATCH=(1 2 4 8 16)
-        HIDDEN=(7168)
-        OUT=(1536)
-        SEQ=(4096)
-        ;;
-    *)
-        echo "Fatal: No matching testcase for '$TEST'"
-        exit 1
-        ;;
-esac
-
-
 
 # Check if python script exists
 if [[ ! -f "$PY_SCRIPT" ]]; then
@@ -86,55 +80,107 @@ if [[ ! -f "$PY_SCRIPT" ]]; then
     exit 1
 fi
 
-# Output base path
-OUTPUT_BASE="$OUTPUT_DIR/${RECIPE}-${TEST}"
-
-mkdir -p $OUTPUT_BASE
-
 
 # Add profiling if enabled
 if [[ "$PROFILE" == true ]]; then
     export export NVTE_NVTX_ENABLED=1
 fi
 
+# Function to run a single test configuration
+run_mxfp8_linear() {
+    local script=$1
+    local name=$2       # linear_proj
+    local type=$3       # linear
 
-for mbs in "${BATCH[@]}"; do
-    for hds in "${HIDDEN[@]}"; do
-        for out in "${OUT[@]}"; do
-            for seq in "${SEQ[@]}"; do
-                echo "Testing with batch_size=$mbs, hidden_size=$hds, output_size=$out, seq_length=$seq"
-                echo "----------------------------------------"
-                
-                # Output file for this batch size
-                OUTPUT_FILE="${OUTPUT_BASE}/mbs${mbs}.seq${seq}.hds${hds}.out${out}"
+    local mbs=$4
+    local hds=$5
+    local out=$6
+    local seq=$7
 
-                # Add profiling if enabled
-                if [[ "$PROFILE" == true ]]; then
-                        NSYS_ARGS=(
-                        nsys profile -s none -t nvtx,cuda,cudnn,cublas
-                        --cudabacktrace=all 
-                        --cuda-graph-trace=node 
-                        --python-backtrace=cuda 
-                        --wait all 
-                        --force-overwrite true 
-                        -o $OUTPUT_FILE.nsys-rep
-                    )
-                fi
+    echo "Testing '$name' ($type) with batch_size=$mbs, hidden_size=$hds, output_size=$out, seq_length=$seq"
+    echo "----------------------------------------"
 
-                PYTHON_ARGS=(
-                    python3 "$PY_SCRIPT"
-                    --seq_len "$seq"
-                    --batch_size "$mbs"
-                    --hidden_size "$hds"
-                    --out_features "$out"
-                )
+    # Output file for this batch size
+    mkdir -p "${OUTPUT_DIR}/$name.$type.$TRAIN"
+    local nsysfile="${OUTPUT_DIR}/$name.$type.$TRAIN/mbs${mbs}.seq${seq}.hds${hds}.out${out}.nsys-rep"
 
-                ${NSYS_ARGS[@]} \
-                ${PYTHON_ARGS[@]}
-            done
+    # Build profiling arguments if enabled
+    local nsys_args=()
+    if [[ "$profile" == true ]]; then
+        nsys_args=(
+            nsys profile -s none -t nvtx,cuda,cudnn,cublas
+            --cudabacktrace=all
+            --cuda-graph-trace=node
+            --python-backtrace=cuda
+            --wait all
+            --force-overwrite true
+            -o "$nsysfile"
+        )
+    fi
+
+    # Build python arguments
+    local python_args=(
+        python3 "$script"
+        --name $name
+        --operator $type
+        --seq_len "$seq"
+        --batch_size "$mbs"
+        --hidden_size "$hds"
+        --out_features "$out"
+    )
+
+    if [ "$backward" = true ]; then
+        python_args+=(
+            --backward
+        )
+    fi
+
+    if [ "$graph" = true ]; then
+        python_args+=(
+            --graph
+        )
+    fi
+
+    # Execute test
+    "${nsys_args[@]}" "${python_args[@]}"
+}
+
+
+# for mbs in "${BATCH[@]}"; do
+#     for hds in "${HIDDEN[@]}"; do
+#         for out in "${OUT[@]}"; do
+#             for seq in "${SEQ[@]}"; do
+#                 run_mxfp8_linear "$mbs" "$hds" "$out" "$seq" "$OUTPUT_BASE" "$PROFILE" "$PY_SCRIPT"
+#             done
+#         done
+#     done
+# done
+
+# test config
+case "$TEST" in
+    linear)
+        run_mxfp8_linear $PY_SCRIPT 'gemm' 'linear' 1 7168 1536 4096 
+        ;;
+
+    normal)
+        run_mxfp8_linear $PY_SCRIPT 'gemm' 'norm_linear' 1 7168 1536 4096
+        ;;    
+
+    operator)
+        BATCH=(1 2 4 6 8 16 32 64)
+        for mbs in "${BATCH[@]}"; do
+            run_mxfp8_linear $PY_SCRIPT 'linear_q_down_proj'  'linear'      1 7168  1536  4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_kv_down_proj' 'linear'      1 7168  576   4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_q_up_proj'    'norm_linear' 1 7168  24576 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' 1 7168  32768 4096
+            run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      1 16384 7168  4096
         done
-    done
-done
+    *)
+        echo "Fatal: No matching testcase for '$TEST'"
+        exit 1
+        ;;
+esac
+
 
 echo ""
 echo "All tests completed successfully!"
