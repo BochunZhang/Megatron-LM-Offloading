@@ -146,16 +146,6 @@ run_mxfp8_linear() {
 }
 
 
-# for mbs in "${BATCH[@]}"; do
-#     for hds in "${HIDDEN[@]}"; do
-#         for out in "${OUT[@]}"; do
-#             for seq in "${SEQ[@]}"; do
-#                 run_mxfp8_linear "$mbs" "$hds" "$out" "$seq" "$OUTPUT_BASE" "$PROFILE" "$PY_SCRIPT"
-#             done
-#         done
-#     done
-# done
-
 # test config
 case "$TEST" in
     linear)
@@ -175,6 +165,7 @@ case "$TEST" in
             run_mxfp8_linear $PY_SCRIPT 'linear_kv_up_proj'   'norm_linear' 1 7168  32768 4096
             run_mxfp8_linear $PY_SCRIPT 'linear_proj'         'linear'      1 16384 7168  4096
         done
+        ;;
     *)
         echo "Fatal: No matching testcase for '$TEST'"
         exit 1
