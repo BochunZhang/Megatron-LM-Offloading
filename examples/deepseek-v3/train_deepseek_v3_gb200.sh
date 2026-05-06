@@ -22,49 +22,85 @@ export TOKENIZERS_PARALLELISM=false
 
 # add megatron to PYTHONPATH
 # instead of installing it with pip3
-export CURRENT_PATH=$(pwd)
-export PYTHONPATH=$CURRENT_PATH:$PYTHONPATH
+MEGATRON_PATH=$(pwd)
+WORKSPACE_PATH=$MEGATRON_PATH
+export PYTHONPATH=$MEGATRON_PATH:$PYTHONPATH
+
+
+# function to get compute capability from nvidia-smi
+get_compute_capability() {
+    local compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv -i 0)
+    # Remove decimal point, e.g., "10.0" -> "10.0"
+    echo "$compute_cap"
+}
 
 # function to check and install deep_ep version
 check_and_install_deep_ep() {
-    local required_version=$1
-    local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
+    local dispatcher_type=$1
+    local original_path=$(pwd)
+    local third_party_path="$MEGATRON_PATH/third_party"
+    local deep_ep_version="1.2.1+9af0e0d"
 
-    if [[ "$current_version" == "$required_version" ]]; then
-        echo "deep_ep version matches: $current_version"
-        return 0
-    else
-        echo "deep_ep version mismatch. Required: $required_version, Current: ${current_version:-not installed}"
-        local whl_name="deep_ep-${required_version}-cp313-cp313-linux_aarch64.whl"
+    mkdir -p "$third_party_path"
 
-        echo "Searching for $whl_name in dependence directory..."
+    local compute_cap=$(get_compute_capability)
+    echo "Detected GPU compute capability: $compute_cap"
 
-        # search in common locations
-        for dep_dir in "dependence" "dependencies" "deps" "whls"; do
-            if [[ -f "$CURRENT_PATH/$dep_dir/$whl_name" ]]; then
-                echo "Found $whl_name in $dep_dir/, installing..."
-                pip3 install "$CURRENT_PATH/$dep_dir/$whl_name" --force-reinstall
+    case "$dispatcher_type" in
+        deepep)
+            # Check if deep_ep is installed with required version
+            local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
+            if [[ "$current_version" == "$deep_ep_version" ]]; then
+                echo "deep_ep version matches: $current_version"
+                return 0
+            else
+                echo "deep_ep version mismatch. Required: $deep_ep_version, Current: ${current_version:-not installed}"
+
+                cd "$third_party_path"
+                if [[ ! -d "DeepEP" ]]; then
+                    echo "Cloning DeepEP repository..."
+                    git config --global http.sslverify false
+                    git clone https://github.com/deepseek-ai/DeepEP.git DeepEP
+                fi
+
+                cd DeepEP
+                echo "Checking out v1.2.1 branch..."
+                git checkout v1.2.1
+                echo "Installing DeepEP with TORCH_CUDA_ARCH_LIST=$compute_cap..."
+                TORCH_CUDA_ARCH_LIST="$compute_cap" pip3 install --no-build-isolation .
+                cd "$original_path"
                 return $?
             fi
-        done
+            ;;
+        hybridep)
+            # Check if hybridep is installed by importing HybridEpConfigInstance
+            if python -c "from deep_ep import HybridEpConfigInstance" 2>/dev/null; then
+                echo "hybridep is installed (HybridEpConfigInstance import successful)"
+                return 0
+            else
+                echo "hybridep not installed (HybridEpConfigInstance import failed)"
 
-        # also search in subdirectories
-        found=false
-        while IFS= read -r -d '' file; do
-            if [[ $(basename "$file") == "$whl_name" ]]; then
-                echo "Found $whl_name, installing..."
-                pip3 install "$file" --force-reinstall
-                found=true
-                break
+                cd "$third_party_path"
+                if [[ ! -d "HybridEP" ]]; then
+                    echo "Cloning DeepEP repository for HybridEP..."
+                    git config --global http.sslverify false
+                    git clone https://github.com/deepseek-ai/DeepEP.git HybridEP
+                fi
+
+                cd HybridEP
+                echo "Checking out hybrid-ep branch..."
+                git checkout hybrid-ep
+                echo "Installing HybridEP with TORCH_CUDA_ARCH_LIST=$compute_cap..."
+                TORCH_CUDA_ARCH_LIST="$compute_cap" pip3 install --no-build-isolation .
+                cd "$original_path"
+                return $?
             fi
-        done < <(find "$CURRENT_PATH" -name "$whl_name" -print0 2>/dev/null)
-
-        if [[ "$found" == false ]]; then
-            echo "Error: Could not find $whl_name in any subdirectory"
-            echo "Please ensure the whl file exists in a 'dependence' directory or subdirectory"
+            ;;
+        *)
+            echo "Error: unknown dispatcher type '$dispatcher_type'"
             return 1
-        fi
-    fi
+            ;;
+    esac
 }
 
 if [ -z "${WORLD_SIZE+x}" ]; then
@@ -184,9 +220,9 @@ esac
 
 # check and install required deep_ep version
 if [[ "$DISPATCHER" == "deepep" ]]; then
-    check_and_install_deep_ep "1.2.1+9af0e0d"
+    check_and_install_deep_ep "deepep"
 elif [[ "$DISPATCHER" == "hybridep" ]]; then
-    check_and_install_deep_ep "1.2.1+3f601f7"
+    check_and_install_deep_ep "hybridep"
 fi
 if [[ $? -ne 0 ]]; then
     echo "Failed to install required deep_ep version"
@@ -198,8 +234,8 @@ DP=$[$WORLD_SIZE / $TP / $PP]
 
 if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
     MODEL="dlc-deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP-mbs$MICRO_BATCH_SIZE-gbs$GLOBAL_BATCH_SIZE-expert$NUM_EXPERT-layer$NUM_LAYER-seq$SEQ_LEN"
-    BASE_PATH=$CURRENT_PATH/logs-temp/$MODEL
-    LOGS_PATH=$CURRENT_PATH/logs-temp/$MODEL/rank$RANK
+    BASE_PATH=$WORKSPACE_PATH/logs-temp/$MODEL
+    LOGS_PATH=$WORKSPACE_PATH/logs-temp/$MODEL/rank$RANK
 else
     export GLOO_SOCKET_IFNAME=eth0
     export MASTER_ADDR=localhost
@@ -207,8 +243,8 @@ else
     export NNODES=1
     export RANK=0
     MODEL="dsw-deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP-mbs$MICRO_BATCH_SIZE-gbs$GLOBAL_BATCH_SIZE-expert$NUM_EXPERT-layer$NUM_LAYER-seq$SEQ_LEN"
-    BASE_PATH=$CURRENT_PATH/logs-temp/$MODEL
-    LOGS_PATH=$CURRENT_PATH/logs-temp/$MODEL
+    BASE_PATH=$WORKSPACE_PATH/logs-temp/$MODEL
+    LOGS_PATH=$WORKSPACE_PATH/logs-temp/$MODEL
 fi
 
 # paths
@@ -216,7 +252,7 @@ TENSORBOARD_PATH=$LOGS_PATH/tensorboard
 CHECKPOINTS_PATH=$LOGS_PATH/checkpoints
 
 rm -rf $LOGS_PATH
-mkdir -p $CURRENT_PATH/logs
+mkdir -p $WORKSPACE_PATH/logs
 mkdir -p $TENSORBOARD_PATH
 mkdir -p $CHECKPOINTS_PATH
 mkdir -p ./data-cache
@@ -524,8 +560,8 @@ if [ $RANK -eq 0 ]; then
     if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
         sleep 60
     fi
-    # TARGET_PATH=$CURRENT_PATH/logs/$MODEL-$TIMESTEMP
+    # TARGET_PATH=$WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
     # mkdir -p $TARGET_PATH
 
-    mv $BASE_PATH $CURRENT_PATH/logs/$MODEL-$TIMESTEMP
+    mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
 fi
