@@ -11,7 +11,8 @@ config = Config()
 config.trace_filter.exclude.extend([
     "*<genexpr>",
     "*<lambda>",
-    "tokenize*"
+    "tokenize*",
+    "megatron.training.argument_utils.*",
 ])
 config.trace_filter.include = [
     "__main__",
