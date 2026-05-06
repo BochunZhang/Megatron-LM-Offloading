@@ -9,20 +9,28 @@ output = TextOutput(path='./tests/callgraph/results', rank=local_rank)
 
 config = Config()
 config.trace_filter.exclude.extend([
-    "argparse*",
     "*<genexpr>",
     "*<lambda>",
     "tokenize*"
 ])
 config.trace_filter.include = [
     "__main__",
+
+    # packages
     "megatron*",
     "torch*",
+    "transformer_engine*",
+    "transformers*",
     "gpt_builder*",
     "model_provider*",
     "subprocess*",
     "MCore*",
 
+    # part of packages but we don't want to include all functions from these modules
+    "argparse.ArgumentParser.parse_args",
+    "argparse.ArgumentParser.parse_known_args",
+
+    # key words
     "*FP8*",
     "*CUDA*",
     "*Graph*",
@@ -31,6 +39,7 @@ config.trace_filter.include = [
     "*Attention*",
     "*Submodules*",
 
+    # functions defined in this file
     "get_batch",
     "loss_func",
     "forward_step",
