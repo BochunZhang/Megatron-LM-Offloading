@@ -437,12 +437,13 @@ def main():
     if args.summary:
         print_summary(results)
 
+    os.makedirs(args.output, exist_ok=True)
+
     if args.plot:
         plot_output = os.path.join(args.output, 'result.pdf') if args.output else 'result.pdf'
         plot_results(results, plot_output)
 
     if args.output:
-        os.makedirs(args.output, exist_ok=True)
         with open(os.path.join(args.output, "result.json"), 'w') as f:
             json.dump(results, f, indent=2)
         print(f"\nDetailed results saved to: {args.output}")
