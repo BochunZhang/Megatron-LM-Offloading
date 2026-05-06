@@ -127,11 +127,16 @@ NUM_LAYER=61
 MOE_FREQ="([0]*3+[1]*58)"
 SEQ_LEN=4096
 ENABLE_CUDA_GRAPH=false
-# default dispatcher
 DISPATCHER="hybridep"
+# default offload settings
+CPU_OFFLOADING=false
+CPU_OFFLOADING_DOUBLE_BUFFERING=false
+OFFLOAD_ACTIVATION=false
+OFFLOAD_WEIGHTS=false
+OPTIMIZER_OFFLOAD_FRACTION=1.0
 
 # args
-params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,offload-activation,offload-weights" -- "$@")
+params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,fine-grained-offload,activation-offload,weights-offload,optimizer-offload,optimizer-offload-fraction" -- "$@")
 eval set -- "$params"
 
 while true; do
@@ -185,17 +190,28 @@ while true; do
             ENABLE_CUDA_GRAPH=true
             shift 1
             ;;
-        --offload-activation)
+        --fine-grained-offload)
+            FINE_GRAINED_OFFLOAD=true
+            shift 1
+            ;;
+        --activation-offload)
             OFFLOAD_ACTIVATION=true
             CPU_OFFLOADING=true
             CPU_OFFLOADING_DOUBLE_BUFFERING=true
             shift 1
             ;;
-        --offload-weights)
+        --weights-offload)
             OFFLOAD_WEIGHTS=true
             CPU_OFFLOADING=true
             CPU_OFFLOADING_DOUBLE_BUFFERING=true
             shift 1
+            ;;
+        --optimizer-offload)
+            OPTIMIZER_OFFLOAD=true
+            ;;
+        --optimizer-offload-fraction)
+            OPTIMIZER_OFFLOAD_FRACTION="$2"
+            shift 2
             ;;
         --)
             shift
@@ -269,12 +285,6 @@ DISTRIBUTED_ARGS=(
     --master_port $MASTER_PORT
 )
 
-
-# default offload settings
-CPU_OFFLOADING=${CPU_OFFLOADING:-false}
-CPU_OFFLOADING_DOUBLE_BUFFERING=${CPU_OFFLOADING_DOUBLE_BUFFERING:-false}
-OFFLOAD_ACTIVATION=${OFFLOAD_ACTIVATION:-false}
-OFFLOAD_WEIGHTS=${OFFLOAD_WEIGHTS:-false}
 
 
 MODEL_PARALLEL_ARGS=(
@@ -512,6 +522,48 @@ LOAD_ARGS=(
     --dist-ckpt-strictness log_all 
 )
 
+OFFLOADING_ARGS=()
+if [ $FINE_GRAINED_OFFLOAD = true ]; then
+    OFFLOADING_ARGS+=(
+        --fine-grained-activation-offloading
+        --offload-modules "attn_norm" "core_attn" "attn_proj" "mlp_norm" "expert_fc1" "moe_act"
+    )
+fi
+
+if [ $CPU_OFFLOADING = true ]; then
+    OFFLOADING_ARGS+=(
+        --cpu-offloading 
+        --cpu-offloading-num-layers $NUM_LAYER
+    )
+    if [ $OFFLOAD_ACTIVATION = false ]; then
+        OFFLOADING_ARGS+=(
+            --offload-activation
+        )
+    fi
+    if [ $OFFLOAD_WEIGHTS = true ]; then
+        OFFLOADING_ARGS+=(
+            --offload-weights
+        )
+    fi
+    if [ $CPU_OFFLOADING_DOUBLE_BUFFERING = true ]; then
+        OFFLOADING_ARGS+=(
+            --cpu-offloading-double-buffering
+        )
+    fi
+fi
+
+if [ $OPTIMIZER_OFFLOAD = true ]; then
+    OFFLOADING_ARGS+=(
+        --optimizer-offload
+        --optimizer-offload-fraction $OPTIMIZER_OFFLOAD_FRACTION
+        # --use-precision-aware-optimizer # 会降低 main grad 和 optimize state 的精度
+        --overlap-cpu-optimizer-d2h-h2d
+    )
+fi
+
+
+
+
 if [ $RANK -eq 0 ]; then
     # Set `NVTE_NVTX_ENABLED=1` in the environment to enable NVTX range profiling in transformer_engine.
     export NVTE_NVTX_ENABLED=1
@@ -552,6 +604,7 @@ ${RECOMPUTE_ARGS[@]} \
 ${FP8_RECIPE_ARGS[@]} \
 ${OPTIMIZER_ARGS[@]} \
 ${MOE_ARGS[@]} \
+$OFFLOADING_ARGS[@] \
 ${PROFILE_ARGS[@]} \
 > $LOGS_PATH/train.log 2>&1
 
