@@ -604,7 +604,7 @@ ${RECOMPUTE_ARGS[@]} \
 ${FP8_RECIPE_ARGS[@]} \
 ${OPTIMIZER_ARGS[@]} \
 ${MOE_ARGS[@]} \
-$OFFLOADING_ARGS[@] \
+${OFFLOADING_ARGS[@]} \
 ${PROFILE_ARGS[@]} \
 > $LOGS_PATH/train.log 2>&1
 
