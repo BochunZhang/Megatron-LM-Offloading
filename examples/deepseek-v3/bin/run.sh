@@ -1,0 +1,336 @@
+#!/bin/bash
+# run.sh - Test runner with matrix expansion
+# Usage: ./run.sh test <testcase>  or  ./run.sh list
+#
+# Dependencies: yq (https://github.com/mikefarah/yq)
+#   Install: brew install yq  (macOS)
+#            apt install yq  (Ubuntu/Debian)
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTCASES_DIR="${SCRIPT_DIR}/../testcases"
+TRAIN_SCRIPT="${SCRIPT_DIR}/train.sh"
+LOGS_DIR="${SCRIPT_DIR}/../../../logs"
+
+# Check yq is installed
+if ! command -v yq &> /dev/null; then
+    echo "Error: yq is not installed. Please install yq first."
+    echo "  macOS: brew install yq"
+    echo "  Ubuntu/Debian: apt install yq"
+    echo "  Others: see https://github.com/mikefarah/yq"
+    exit 1
+fi
+
+# ========== Helper Functions ==========
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+# Convert short param name to long train.sh param name
+param_to_arg() {
+    local name=$1
+    local value=$2
+
+    case "$name" in
+        pp) echo "--pipeline-parallel $value" ;;
+        tp) echo "--tensor-parallel $value" ;;
+        ep) echo "--expert-parallel $value" ;;
+        mbs) echo "--micro-batch-size $value" ;;
+        gbs|global-batch-size) echo "--global-batch-size $value" ;;
+        num-expert) echo "--num-expert $value" ;;
+        num-layer) echo "--num-layer $value" ;;
+        moe-freq) echo "--moe-freq $value" ;;
+        seq-length) echo "--seq-length $value" ;;
+        seq-len) echo "--seq-length $value" ;;
+        dispatcher) echo "--dispatcher $value" ;;
+        pp-layout) echo "--pipeline-parallel-layout $value" ;;
+        *) echo "--$name $value" ;;
+    esac
+}
+
+# Convert feature to train.sh args using yq
+feature_to_args() {
+    local file=$1
+    local args=""
+
+    # Check profile
+    local profile=$(yq '.feature.profile // false' "$file")
+    if [[ "$profile" == "true" ]]; then
+        args+=" --profile"
+    fi
+
+    # Check graph
+    local graph=$(yq '.feature.graph // false' "$file")
+    if [[ "$graph" == "true" ]]; then
+        args+=" --graph"
+    fi
+
+    # Check offload
+    local offload_count=$(yq '.feature.offload | length' "$file")
+    if [ "$offload_count" -gt 0 ]; then
+        for i in $(seq 0 $((offload_count - 1))); do
+            local item=$(yq ".feature.offload[$i]" "$file")
+            case "$item" in
+                act) args+=" --offload-act" ;;
+                weight|wt) args+=" --offload-weight" ;;
+                optim|opt) args+=" --offload-optim" ;;
+                fine) args+=" --offload-fine" ;;
+            esac
+        done
+    fi
+
+    echo "$args"
+}
+
+# Get all matrix keys using yq
+get_matrix_keys() {
+    local file=$1
+    yq '.matrix | keys | .[]' "$file" 2>/dev/null
+}
+
+# Parse matrix values using yq
+parse_matrix_values() {
+    local file=$1
+    local key=$2
+    yq ".matrix.$key | join(\" \")" "$file" 2>/dev/null
+}
+
+# Build base config from param section using yq
+build_base_config() {
+    local file=$1
+    local config=""
+
+    # Get all param keys and build config
+    local keys=$(yq '.param | keys | .[]' "$file" 2>/dev/null)
+    for key in $keys; do
+        local value=$(yq ".param.$key" "$file")
+        # Remove surrounding quotes if present
+        value=$(echo "$value" | sed 's/^"//;s/"$//')
+        config+="$(param_to_arg "$key" "$value") "
+    done
+
+    echo "$config"
+}
+
+# Get all matrix combinations using iterative approach (BFS-like)
+get_matrix_combinations() {
+    local file=$1
+    local keys=($(get_matrix_keys "$file"))
+
+    if [ ${#keys[@]} -eq 0 ]; then
+        echo ""
+        return
+    fi
+
+    # Build arrays of values for each key
+    declare -a values_arrays
+    for i in "${!keys[@]}"; do
+        values_arrays[$i]=$(parse_matrix_values "$file" "${keys[$i]}")
+    done
+
+    # Iterative combination generation
+    local combinations=("")
+
+    for i in "${!keys[@]}"; do
+        local key="${keys[$i]}"
+        local values=(${values_arrays[$i]})
+        local new_combinations=()
+
+        for combo in "${combinations[@]}"; do
+            for val in "${values[@]}"; do
+                if [ -z "$combo" ]; then
+                    new_combinations+=("${key}=${val}")
+                else
+                    new_combinations+=("${combo} ${key}=${val}")
+                fi
+            done
+        done
+
+        combinations=("${new_combinations[@]}")
+    done
+
+    printf '%s\n' "${combinations[@]}"
+}
+
+# Run single test
+run_single_test() {
+    local test_name=$1
+    local base_config=$2
+    local matrix_config=$3
+    local feature_args=$4
+    local dry_run=$5
+
+    # Build run name from matrix config
+    local run_suffix=""
+    if [ -n "$matrix_config" ]; then
+        run_suffix=$(echo "$matrix_config" | tr ' ' '-' | tr '=' '-')
+    fi
+
+    local run_name="${test_name}"
+    [ -n "$run_suffix" ] && run_name="${test_name}-${run_suffix}"
+
+    log "[RUN] $run_name"
+
+    # Convert matrix config to args
+    local matrix_args=""
+    if [ -n "$matrix_config" ]; then
+        for pair in $matrix_config; do
+            local key="${pair%%=*}"
+            local val="${pair#*=}"
+            matrix_args+=" $(param_to_arg "$key" "$val")"
+        done
+    fi
+
+    # Build full command
+    local full_config="$base_config$matrix_args"
+
+    log "  Config: $full_config"
+    log "  Features: $feature_args"
+
+    # Execute
+    local cmd="$TRAIN_SCRIPT $full_config $feature_args"
+
+    if [ "$dry_run" = true ]; then
+        log "  [DRY-RUN] Command: $cmd"
+    else
+        log "  Command: $cmd"
+        cd "$SCRIPT_DIR/.."
+        eval "$cmd" || true
+    fi
+}
+
+# ========== Commands ==========
+
+cmd_list() {
+    echo "Available testcases:"
+    for yaml in "$TESTCASES_DIR"/*.yaml; do
+        if [ -f "$yaml" ]; then
+            local name=$(basename "$yaml" .yaml)
+            local desc=$(yq '.description // ""' "$yaml")
+            printf "  %-30s %s\n" "$name" "$desc"
+        fi
+    done
+}
+
+cmd_test() {
+    local test_name=$1
+    local dry_run=$2
+    local yaml_file="$TESTCASES_DIR/${test_name}.yaml"
+
+    if [ ! -f "$yaml_file" ]; then
+        log "[ERROR] Testcase not found: $yaml_file"
+        exit 1
+    fi
+
+    log "[TESTCASE] $test_name"
+    log "  File: $yaml_file"
+
+    # Read base config from param section (using yq)
+    local base_config=$(build_base_config "$yaml_file")
+
+    # Get feature args
+    local feature_args=$(feature_to_args "$yaml_file")
+
+    log "  Base config: $base_config"
+    log "  Features: $feature_args"
+
+    # Get matrix combinations
+    local combinations=($(get_matrix_combinations "$yaml_file"))
+
+    if [ ${#combinations[@]} -eq 0 ] || [ -z "${combinations[0]}" ]; then
+        log "  No matrix, running single test"
+        run_single_test "$test_name" "$base_config" "" "$feature_args" "$dry_run"
+    else
+        log "  Matrix combinations: ${#combinations[@]}"
+        for combo in "${combinations[@]}"; do
+            run_single_test "$test_name" "$base_config" "$combo" "$feature_args" "$dry_run"
+        done
+    fi
+
+    log "[DONE] $test_name"
+}
+
+# ========== Log Directory Management ==========
+prepare_logs() {
+    local logs_root="${SCRIPT_DIR}/../../../logs"
+
+    if [ -d "$logs_root" ]; then
+        local timestamp=$(date +%Y%m%d-%H%M%S)
+        mv "$logs_root" "${logs_root}-${timestamp}"
+        log "Archived existing logs to logs-${timestamp}"
+    fi
+
+    mkdir -p "$logs_root"
+}
+
+# Copy YAML files to logs after test
+copy_yaml_to_logs() {
+    local logs_root="${SCRIPT_DIR}/../../../logs"
+
+    for yaml in "$TESTCASES_DIR"/*.yaml; do
+        if [ -f "$yaml" ]; then
+            cp "$yaml" "$logs_root/"
+        fi
+    done
+    log "Copied YAML files to logs/"
+}
+
+# ========== Main ==========
+main() {
+    local command="${1:-}"
+    local dry_run=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--dry-run)
+                dry_run=true
+                shift
+                ;;
+            list|test)
+                command="$1"
+                shift
+                break
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    case "$command" in
+        list)
+            cmd_list
+            ;;
+        test)
+            if [ -z "${1:-}" ]; then
+                echo "Usage: $0 [-d|--dry-run] test <testcase-name>"
+                exit 1
+            fi
+            if [ "$dry_run" != true ]; then
+                prepare_logs
+            fi
+            cmd_test "$1" "$dry_run"
+            if [ "$dry_run" != true ]; then
+                copy_yaml_to_logs
+            fi
+            ;;
+        *)
+            echo "Usage: $0 [-d|--dry-run] {list|test <testcase>}"
+            echo ""
+            echo "Commands:"
+            echo "  list              List all available testcases"
+            echo "  test <name>       Run specified testcase"
+            echo ""
+            echo "Options:"
+            echo "  -d, --dry-run     Dry run mode (print commands only, do not execute)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 list"
+            echo "  $0 test ep4-alltoall"
+            echo "  $0 -d test ep4-alltoall"
+            echo "  $0 --dry-run test ep4-alltoall"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

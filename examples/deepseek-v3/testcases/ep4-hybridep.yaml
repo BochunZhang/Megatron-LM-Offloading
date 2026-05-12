@@ -1,27 +1,21 @@
-# Testcase: 5layer-ep4-hybridep
-# Description: Test with dp=ep=4, hybridep dispatcher, seq_len=4096, mbs=1/2/4/8
-#              2 dense layers + 3 MoE layers, 32 experts
+name: ep4-hybridep
+description: 5-layer model with EP4 and hybridep dispatcher
 
-name: "5layer-ep4-hybridep"
-description: "5-layer model with EP4 and hybridep dispatcher"
+param:
+  pp: 1
+  tp: 1
+  ep: 4
+  global-batch-size: 128
+  num-expert: 32
+  num-layer: 5
+  moe-freq: "([0]*2+[1]*3)"
+  seq-length: 4096
+  dispatcher: hybridep
 
-# Base configuration
-pp: 1
-tp: 1
-ep: 4
-global-batch-size: 128
-num-expert: 32
-num-layer: 5
-moe-freq: "([0]*2+[1]*3)"
-seq-length: 4096
-dispatcher: hybridep
-
-# Parameter matrix
 matrix:
   mbs: [1, 2, 4, 8]
 
-# Default features
-default_features: []
-
-# Metadata
-tags: [ep4, hybridep, 5layer]
+feature:
+  profile: false
+  graph: false
+  offload: []

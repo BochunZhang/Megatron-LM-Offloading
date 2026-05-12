@@ -1,27 +1,21 @@
-# Testcase: 5layer-ep4-alltoall
-# Description: Test with dp=ep=4, alltoall dispatcher, seq_len=4096, mbs=1/2/4/8
-#              2 dense layers + 3 MoE layers, 32 experts
+name: ep4-alltoall
+description: 5-layer model with EP4 and alltoall dispatcher
 
-name: "5layer-ep4-alltoall"
-description: "5-layer model with EP4 and alltoall dispatcher"
+param:
+  pp: 1
+  tp: 1
+  ep: 4
+  global-batch-size: 128
+  num-expert: 32
+  num-layer: 5
+  moe-freq: "([0]*2+[1]*3)"
+  seq-length: 4096
+  dispatcher: alltoall
 
-# Base configuration
-pp: 1
-tp: 1
-ep: 4
-global-batch-size: 128
-num-expert: 32
-num-layer: 5
-moe-freq: "([0]*2+[1]*3)"
-seq-length: 4096
-dispatcher: alltoall
-
-# Parameter matrix (will iterate all values)
 matrix:
   mbs: [1, 2, 4, 8]
 
-# Default features (can be overridden by --features)
-default_features: []
-
-# Metadata
-tags: [ep4, alltoall, 5layer]
+feature:
+  profile: false
+  graph: false
+  offload: []
