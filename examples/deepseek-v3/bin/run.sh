@@ -40,18 +40,18 @@ param_to_arg() {
     esac
 
     case "$name" in
-        pp|pipeline-parallel) echo "--pipeline-parallel $value" ;;
-        tp|tensor-parallel) echo "--tensor-parallel $value" ;;
-        ep|expert-parallel) echo "--expert-parallel $value" ;;
-        mbs|micro-batch-size) echo "--micro-batch-size $value" ;;
-        gbs|global-batch-size) echo "--global-batch-size $value" ;;
-        num-expert) echo "--num-expert $value" ;;
-        num-layer) echo "--num-layer $value" ;;
-        moe-freq) echo "--moe-freq $value" ;;
-        seq-length) echo "--seq-length $value" ;;
+        # map short name to long name
+        pp) echo "--pipeline-parallel $value" ;;
+        tp) echo "--tensor-parallel $value" ;;
+        ep) echo "--expert-parallel $value" ;;
+        mbs) echo "--micro-batch-size $value" ;;
+        gbs) echo "--global-batch-size $value" ;;
+        expert) echo "--num-expert $value" ;;
+        layer) echo "--num-layer $value" ;;
+        moe) echo "--moe-freq $value" ;;
         seq-len) echo "--seq-length $value" ;;
-        dispatcher) echo "--dispatcher $value" ;;
         pp-layout) echo "--pipeline-parallel-layout $value" ;;
+        # echo long name
         *) echo "--$name $value" ;;
     esac
 }
