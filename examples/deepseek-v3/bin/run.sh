@@ -26,9 +26,18 @@ fi
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # Convert short param name to long train.sh param name
+# Values with special characters (like parentheses) are wrapped in single quotes
 param_to_arg() {
     local name=$1
     local value=$2
+
+    # Check if value contains special characters that need quoting
+    # Special chars: ( ) [ ] { } * ? & | ; < > $ ` \ " space
+    case "$value" in
+        *[\(\)\[\]\{\}\*\?\&\|\;\<\>\$\`\\\"\ ]*)
+            value="'$value'"
+            ;;
+    esac
 
     case "$name" in
         pp) echo "--pipeline-parallel $value" ;;
