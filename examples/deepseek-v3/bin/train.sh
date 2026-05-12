@@ -130,12 +130,15 @@ OPTIMIZER_OFFLOAD=false
 OPTIMIZER_OFFLOAD_FRACTION=1.0
 FINE_GRAINED_OFFLOAD=false
 
-# Profile设置
+# Profile settings
 ENABLE_PROFILE=false
+
+# Config file to copy
+CONFIG_FILE=""
 
 # ========== 3. Parameter Parsing (low-level only) ==========
 params=$(getopt -o "" --long \
-  "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,profile,activation-offload,weights-offload,optimizer-offload,optimizer-offload-fraction:,fine-grained-offload,train-iters:" \
+  "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,profile,activation-offload,weights-offload,optimizer-offload,optimizer-offload-fraction:,fine-grained-offload,train-iters:,config-file:" \
   -- "$@")
 eval set -- "$params"
 
@@ -160,6 +163,7 @@ while true; do
         --optimizer-offload) OPTIMIZER_OFFLOAD=true; shift ;;
         --optimizer-offload-fraction) OPTIMIZER_OFFLOAD_FRACTION="$2"; shift 2 ;;
         --fine-grained-offload) FINE_GRAINED_OFFLOAD=true; shift ;;
+        --config-file) CONFIG_FILE="$2"; shift 2 ;;
         --) shift; break ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
@@ -209,6 +213,11 @@ mkdir -p $CHECKPOINTS_PATH
 mkdir -p ./data-cache
 
 cp "${BASH_SOURCE[0]}" $LOGS_PATH/
+
+# Copy testcase yaml config if provided
+if [[ -n "$CONFIG_FILE" && -f "$CONFIG_FILE" ]]; then
+    cp "$CONFIG_FILE" $LOGS_PATH/
+fi
 
 # ========== 6. Argument Arrays ==========
 DISTRIBUTED_ARGS=(

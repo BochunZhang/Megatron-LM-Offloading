@@ -92,6 +92,7 @@ run_single_test() {
     local config_str=$2
     local features=$3
     local dry_run=$4
+    local yaml_file=$5
 
     log "[RUN] $test_name"
     log "  Config: $config_str"
@@ -100,14 +101,19 @@ run_single_test() {
     # Build feature arguments
     local feature_args=$(build_feature_args "$features")
 
-    # 构建完整命令
-    local cmd="$TRAIN_SCRIPT $config_str $feature_args"
+    # Build full command
+    local cmd="$TRAIN_SCRIPT $config_str --config-file $yaml_file $feature_args"
 
     if [[ "$dry_run" == true ]]; then
         log "[DRY-RUN] $cmd"
         return 0
     fi
-}
+
+    # Create log directory
+    local log_file="$LOGS_DIR/${test_name}.log"
+    mkdir -p "$LOGS_DIR"
+
+    log "  Log: $log_file"
 
 # ========== API: Build config string from YAML ==========
 build_config_from_yaml() {
@@ -189,7 +195,7 @@ run_testcase() {
         local run_name="${test_name}-mbs${mbs}"
         local run_config="${base_config}--micro-batch-size $mbs"
 
-        if ! run_single_test "$run_name" "$run_config" "$features" "$dry_run"; then
+        if ! run_single_test "$run_name" "$run_config" "$features" "$dry_run" "$yaml_file"; then
             failed=$((failed+1))
         fi
     done
