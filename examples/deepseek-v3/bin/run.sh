@@ -40,10 +40,10 @@ param_to_arg() {
     esac
 
     case "$name" in
-        pp) echo "--pipeline-parallel $value" ;;
-        tp) echo "--tensor-parallel $value" ;;
-        ep) echo "--expert-parallel $value" ;;
-        mbs) echo "--micro-batch-size $value" ;;
+        pp|pipeline-parallel) echo "--pipeline-parallel $value" ;;
+        tp|tensor-parallel) echo "--tensor-parallel $value" ;;
+        ep|expert-parallel) echo "--expert-parallel $value" ;;
+        mbs|micro-batch-size) echo "--micro-batch-size $value" ;;
         gbs|global-batch-size) echo "--global-batch-size $value" ;;
         num-expert) echo "--num-expert $value" ;;
         num-layer) echo "--num-layer $value" ;;
