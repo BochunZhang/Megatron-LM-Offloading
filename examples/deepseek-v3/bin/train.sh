@@ -327,6 +327,13 @@ case "$DISPATCHER" in
         fi
         ;;
     alltoall)
+        # alltoall
+        # remove the moe_router and moe_preprocess components from
+        # the --cuda-graph-scope flag to avoid the incompatibility with MoE recompute.
+        # reference: https://asskyldst.blogspot.com/?page=en-postcsr-what-modifications-are-necessary-to-1768823879348
+        # disable --moe-router-fusion to avoid the following error:
+        # one of the variables needed for gradient computation has been modified
+        # by an inplace operation
         MOE_ARGS+=(
           --moe-token-dispatcher-type alltoall
           --moe-router-padding-for-quantization
@@ -339,6 +346,8 @@ case "$DISPATCHER" in
         fi
         ;;
     allgather)
+        # allgather
+        # allgather and alltoall_seq dispatcher does not support moe_router_padding_for_quantization.
         MOE_ARGS+=(--moe-token-dispatcher-type allgather)
         if [ "$ENABLE_CUDA_GRAPH" = true ]; then
           MOE_ARGS+=(
@@ -454,7 +463,7 @@ if [ "$OPTIMIZER_OFFLOAD" = true ]; then
     )
 fi
 
-# Profile (仅RANK=0)
+# Profile (only profile RANK=0)
 PROFILE_ARGS=()
 NSYS_ARGS=()
 if [ "$ENABLE_PROFILE" = true ] && [ $RANK -eq 0 ]; then
@@ -479,7 +488,7 @@ if [ "$ENABLE_PROFILE" = true ] && [ $RANK -eq 0 ]; then
 fi
 
 # ========== 7. Execute Training ==========
-echo "[Layer 1] Starting training with config:"
+echo "train.sh: Starting training with config:"
 echo "  TP=$TP, PP=$PP, EP=$EP, DP=$DP"
 echo "  MBS=$MICRO_BATCH_SIZE, GBS=$GLOBAL_BATCH_SIZE"
 echo "  Layers=$NUM_LAYER, Experts=$NUM_EXPERT"
@@ -514,4 +523,4 @@ if [ $RANK -eq 0 ]; then
     mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP 2>/dev/null || true
 fi
 
-echo "[Layer 1] Training completed. Logs: $LOGS_PATH/train.log"
+echo "train.sh: Training completed. Logs: $LOGS_PATH/train.log"
