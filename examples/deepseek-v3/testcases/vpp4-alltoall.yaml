@@ -1,0 +1,28 @@
+# Testcase: 29layer-vpp4-alltoall
+# Description: Test with pp=4, vpp=4, 4 GPUs, seq_len=4096, mbs=1, gbs=64
+#              3 dense layers + 26 MoE layers, 256 experts, one test only
+
+name: "29layer-vpp4-alltoall"
+description: "29-layer model with PP4/VPP4 and alltoall dispatcher"
+
+# Base configuration
+pp: 4
+pp-layout: "Et|(tt|)*14L"
+tp: 1
+ep: 1
+global-batch-size: 64
+num-expert: 256
+num-layer: 29
+moe-freq: "([0]*3+[1]*26)"
+seq-length: 4096
+dispatcher: alltoall
+
+# Parameter matrix (single point test, no matrix)
+matrix:
+  mbs: [1]
+
+# Default features
+default_features: []
+
+# Metadata
+tags: [vpp4, alltoall, 29layer]
