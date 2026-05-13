@@ -280,13 +280,12 @@ prepare_logs() {
         log "Archived existing logs to logs-${timestamp}"
     fi
 
-    mkdir -p "$logs_root"
+    mkdir -p "$LOGS_DIR"
 }
 
 # Copy YAML files to logs after test
 copy_yaml_to_logs() {
-    local logs_root="${SCRIPT_DIR}/../../../logs"
-    cp "$TESTCASES_DIR/$1.yaml" "$logs_root/"
+    cp "$TESTCASES_DIR/$1.yaml" "$LOGS_DIR/"
 }
 
 # ========== Main ==========
