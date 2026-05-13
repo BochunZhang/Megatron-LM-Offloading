@@ -424,7 +424,7 @@ fi
 if [ "$CPU_OFFLOADING" = true ]; then
     OFFLOADING_ARGS+=(
         --cpu-offloading
-        --cpu-offloading-num-layers $NUM_LAYER
+        --cpu-offloading-num-layers $((NUM_LAYER - 1))
     )
     [ "$OFFLOAD_ACTIVATION" = false ] && OFFLOADING_ARGS+=(--cpu-offloading-activation)
     [ "$OFFLOAD_WEIGHTS" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-weights)
