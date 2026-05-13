@@ -34,7 +34,10 @@ if ! command -v yq &> /dev/null; then
 fi
 
 # ========== Helper Functions ==========
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*";
+    echo "$*"
+}
 
 # Convert short param name to long train.sh param name
 # Values with special characters (like parentheses) are wrapped in single quotes
@@ -285,13 +288,7 @@ prepare_logs() {
 # Copy YAML files to logs after test
 copy_yaml_to_logs() {
     local logs_root="${SCRIPT_DIR}/../../../logs"
-
-    for yaml in "$TESTCASES_DIR"/*.yaml; do
-        if [ -f "$yaml" ]; then
-            cp "$yaml" "$logs_root/"
-        fi
-    done
-    log "Copied YAML files to logs/"
+    cp "$TESTCASES_DIR/$1.yaml" "$logs_root/"
 }
 
 # ========== Main ==========
@@ -330,7 +327,7 @@ main() {
             fi
             cmd_test "$1" "$dry_run"
             if [ "$dry_run" != true ]; then
-                copy_yaml_to_logs
+                copy_yaml_to_logs "$1"
             fi
             ;;
         *)
