@@ -4,9 +4,9 @@
 
 set -e
 
+MEGATRON_PATH=$(pwd)
+WORKSPACE_PATH=$(pwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MEGATRON_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)"
-WORKSPACE_PATH=$MEGATRON_PATH
 
 # ========== 1. Environment Variables ==========
 export CUDA_DEVICE_MAX_CONNECTIONS=1

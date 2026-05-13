@@ -4,14 +4,15 @@
 #
 # Dependencies: yq (https://github.com/mikefarah/yq)
 #   Install: brew install yq  (macOS)
-#            apt install yq  (Ubuntu/Debian)
 
 set -e
 
+MEGATRON_DIR=$(pwd)
+WORKSPACE_DIR=$(pwd)
+LOGS_DIR="${WORKSPACE_DIR}/logs"     # megatron/logs
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TESTCASES_DIR="${SCRIPT_DIR}/../testcases"
+TESTCASES_DIR="$(cd "${SCRIPT_DIR}/../testcases" && pwd)"
 TRAIN_SCRIPT="${SCRIPT_DIR}/train.sh"
-LOGS_DIR="${SCRIPT_DIR}/../../../logs"
 
 # Check yq is installed
 if ! command -v yq &> /dev/null; then
@@ -216,7 +217,6 @@ run_single_test() {
         log "  [DRY-RUN] Command: $cmd"
     else
         log "  Command: $cmd"
-        cd "$SCRIPT_DIR/.."
         eval "$cmd" || true
     fi
 }
@@ -274,11 +274,9 @@ cmd_test() {
 
 # ========== Log Directory Management ==========
 prepare_logs() {
-    local logs_root="${SCRIPT_DIR}/../../../logs"
-
-    if [ -d "$logs_root" ]; then
+    if [ -d "$LOGS_DIR" ]; then
         local timestamp=$(date +%Y%m%d-%H%M%S)
-        mv "$logs_root" "${logs_root}-${timestamp}"
+        mv "$LOGS_DIR" "${LOGS_DIR}-${timestamp}"
         log "Archived existing logs to logs-${timestamp}"
     fi
 
