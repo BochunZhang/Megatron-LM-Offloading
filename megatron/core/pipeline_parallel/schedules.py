@@ -633,6 +633,7 @@ def forward_backward_no_pipelining(
     else:
         with no_sync_func():
             for i in range(num_microbatches - 1):
+                nvtx_range_push(suffix=f"forward_step[{i}]")
                 output_tensor, num_tokens = forward_step(
                     forward_step_func,
                     data_iterator,
@@ -647,12 +648,17 @@ def forward_backward_no_pipelining(
                     current_microbatch=i,
                 )
                 total_num_tokens += num_tokens
+                nvtx_range_pop(suffix=f"forward_step[{i}]")
                 if not forward_only:
+                    nvtx_range_push(suffix=f"backward_step[{i}]")
                     backward_step(
                         input_tensor, output_tensor, output_tensor_grad, model_type, config
                     )
+                    nvtx_range_pop(suffix=f"backward_step[{i}]")
         # Run computation for last microbatch out of context handler (want to
         # synchronize gradients).
+
+        nvtx_range_push(suffix=f"forward_step[{num_microbatches - 1}]")
         output_tensor, num_tokens = forward_step(
             forward_step_func,
             data_iterator,
@@ -670,9 +676,12 @@ def forward_backward_no_pipelining(
         )
 
         total_num_tokens += num_tokens
+        nvtx_range_pop(suffix=f"forward_step[{num_microbatches - 1}]")
 
         if not forward_only:
+            nvtx_range_push(suffix=f"backward_step[{num_microbatches - 1}]")
             backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)
+            nvtx_range_pop(suffix=f"backward_step[{num_microbatches - 1}]")
 
     if config.finalize_model_grads_func is not None and not forward_only:
         # Finalize model grads (perform full grad all-reduce / reduce-scatter for
