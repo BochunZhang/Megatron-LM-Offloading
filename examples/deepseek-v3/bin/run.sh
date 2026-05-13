@@ -15,11 +15,22 @@ LOGS_DIR="${SCRIPT_DIR}/../../../logs"
 
 # Check yq is installed
 if ! command -v yq &> /dev/null; then
-    echo "Error: yq is not installed. Please install yq first."
-    echo "  macOS: brew install yq"
-    echo "  Ubuntu/Debian: apt install yq"
-    echo "  Others: see https://github.com/mikefarah/yq"
-    exit 1
+    echo "yq is not installed. installing yq..."
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        YQ_BINARY="yq_linux_arm64"
+    elif [ "$ARCH" = "x86_64" ]; then
+        YQ_BINARY="yq_linux_amd64"
+    else
+        echo "unknown architecture: $ARCH"
+        echo "Others: see https://github.com/mikefarah/yq"
+        exit 1
+    fi
+
+    curl -L "https://github.com/mikefarah/yq/releases/download/v4.53.2/${YQ_BINARY}" -o yq && \
+    chmod +x yq && \
+    sudo mv yq /usr/local/bin/ && \
+    echo "yq version: $(yq --version)"
 fi
 
 # ========== Helper Functions ==========
