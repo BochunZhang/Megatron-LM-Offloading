@@ -278,7 +278,9 @@ MOE_ARGS=(
 )
 
 if [[ "$CPU_OFFLOADING" == true || "$OFFLOAD_FINE_GRAINED" == true ]]; then
-    OVERLAP_ARGS=()
+    OVERLAP_ARGS=(
+        --overlap-param-gather
+    )
 else
     OVERLAP_ARGS=(
         --overlap-grad-reduce
