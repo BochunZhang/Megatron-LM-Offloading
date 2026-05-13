@@ -277,7 +277,7 @@ MOE_ARGS=(
     --moe-router-force-load-balancing
 )
 
-if [ "$CPU_OFFLOADING" = true ]; then
+if [[ "$CPU_OFFLOADING" == true || "$OFFLOAD_FINE_GRAINED" == true ]]; then
     OVERLAP_ARGS=()
 else
     OVERLAP_ARGS=(
