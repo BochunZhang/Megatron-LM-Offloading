@@ -429,7 +429,7 @@ OFFLOADING_ARGS=()
 if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
     OFFLOADING_ARGS+=(
         --fine-grained-activation-offloading
-        --offload-modules "attn_norm" "core_attn" "attn_proj" "mlp_norm" "expert_fc1" "moe_act"
+        --offload-modules "attn_norm" "qkv_linear" "core_attn" "attn_proj" "mlp_norm" "expert_fc1" "moe_act" 
     )
 fi
 
