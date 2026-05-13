@@ -2,8 +2,6 @@
 # train.sh - Training execution script
 # Responsibility: Execute training with given parameters
 
-set -e
-
 MEGATRON_PATH=$(pwd)
 WORKSPACE_PATH=$(pwd)
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -428,8 +426,8 @@ if [ "$CPU_OFFLOADING" = true ]; then
         --cpu-offloading
         --cpu-offloading-num-layers $NUM_LAYER
     )
-    [ "$OFFLOAD_ACTIVATION" = false ] && OFFLOADING_ARGS+=(--offload-activation)
-    [ "$OFFLOAD_WEIGHTS" = true ] && OFFLOADING_ARGS+=(--offload-weights)
+    [ "$OFFLOAD_ACTIVATION" = false ] && OFFLOADING_ARGS+=(--cpu-offloading-activation)
+    [ "$OFFLOAD_WEIGHTS" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-weights)
     [ "$CPU_OFFLOADING_DOUBLE_BUFFERING" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-double-buffering)
 fi
 
