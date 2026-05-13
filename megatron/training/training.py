@@ -2300,6 +2300,7 @@ def post_training_step_callbacks(
     if args.adlr_autoresume and (iteration % args.adlr_autoresume_interval == 0):
         check_adlr_autoresume_termination(iteration, model, optimizer, opt_param_scheduler)
     
+    nvtx_range_pop(f"iteration {iteration-1}")
     # Profiling.
     if (
         args.profile
@@ -2859,7 +2860,6 @@ def train(
                         ), "CUDA Graphs should have been created."
                         cuda_graph_helper.cuda_graph_set_manual_hooks()
 
-        nvtx_range_pop(f"iteration {iteration}")
         iteration += 1
 
         # If requested, manually register FSDP communication buffers after a short warmup.
