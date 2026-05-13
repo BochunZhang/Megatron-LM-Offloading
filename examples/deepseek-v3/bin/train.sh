@@ -373,10 +373,15 @@ FP8_RECIPE_ARGS=(
     --reuse-grad-buf-for-mxfp8-param-ag
 )
 
-RECOMPUTE_ARGS=(
-    --recompute-granularity selective
-    --recompute-modules moe_act mlp
-)
+# Disable recompute when CPU offloading is enabled
+if [ "$CPU_OFFLOADING" = true ]; then
+    RECOMPUTE_ARGS=()
+else
+    RECOMPUTE_ARGS=(
+        --recompute-granularity selective
+        --recompute-modules moe_act mlp
+    )
+fi
 
 DATA_ARGS=(
     --data-cache-path ./data-cache
