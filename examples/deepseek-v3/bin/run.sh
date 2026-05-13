@@ -37,6 +37,7 @@ fi
 # ========== Helper Functions ==========
 log() {
     # echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*";
+    :
 }
 
 # Convert short param name to long train.sh param name

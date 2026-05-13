@@ -275,9 +275,16 @@ MOE_ARGS=(
     --moe-router-bias-update-rate 1e-3
     --moe-router-dtype fp32
     --moe-router-force-load-balancing
-    --overlap-grad-reduce
-    --overlap-param-gather
 )
+
+if [ "$CPU_OFFLOADING" = true ]; then
+    OVERLAP_ARGS=()
+else
+    OVERLAP_ARGS=(
+        --overlap-grad-reduce
+        --overlap-param-gather
+    )
+fi
 
 # Dispatcher-specific
 case "$DISPATCHER" in
@@ -433,7 +440,7 @@ if [ "$CPU_OFFLOADING" = true ]; then
     )
     [ "$OFFLOAD_ACTIVATION" = false ] && OFFLOADING_ARGS+=(--cpu-offloading-activation)
     [ "$OFFLOAD_WEIGHTS" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-weights)
-    [ "$CPU_OFFLOADING_DOUBLE_BUFFERING" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-double-buffering)
+    # [ "$CPU_OFFLOADING_DOUBLE_BUFFERING" = true ] && OFFLOADING_ARGS+=(--cpu-offloading-double-buffering)
 fi
 
 if [ "$OFFLOAD_OPTIMIZER" = true ]; then
@@ -492,6 +499,7 @@ numarun \
     ${OPTIMIZER_ARGS[@]} \
     ${MOE_ARGS[@]} \
     ${OFFLOADING_ARGS[@]} \
+    ${OVERLAP_ARGS[@]} \
     ${PROFILE_ARGS[@]} \
     > $LOGS_PATH/train.log 2>&1
 
