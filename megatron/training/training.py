@@ -1615,21 +1615,27 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
     save_wgrads_in_this_iteration = (args.save_wgrads_interval is not None and
                                      (iteration + 1) % args.save_wgrads_interval == 0)
     while rerun_state_machine.should_run_forward_backward(data_iterator):
+        nvtx_range_pop('should_run_forward_backward')
+
         # Set grad to zero.
+        nvtx_range_push(suffix=f'zero_grad')
         for model_chunk in model:
             model_chunk.zero_grad_buffer()
             # If saving main_grads in this iteration, then all-reduce instead of reduce-scatter.
             model_chunk.force_all_reduce = save_wgrads_in_this_iteration
         optimizer.zero_grad()
+        nvtx_range_pop(suffix=f'zero_grad')
 
         if has_nvidia_modelopt:
             # [ModelOpt]: Pipeline-parallel Distillation stacks student and teacher tensors
+            nvtx_range_push(suffix=f'get_tensor_shapes_adjust_fn_for_distillation')
             adjust_tensor_shapes_fn = get_tensor_shapes_adjust_fn_for_distillation(
                 model,
                 seq_length=args.seq_length,
                 micro_batch_size=args.micro_batch_size,
                 decoder_seq_length=args.decoder_seq_length,
             )
+            nvtx_range_pop(suffix=f'get_tensor_shapes_adjust_fn_for_distillation')
         else:
             adjust_tensor_shapes_fn = None
 
@@ -1646,14 +1652,16 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
             # Check if forward_pre_hook is enabled by checking if hooks are registered.
             forward_pre_hook_enabled = len(model[0].remove_forward_pre_hook_handles) > 0
             if forward_pre_hook_enabled:
+                nvtx_range_push(suffix=f'copy_main_params_to_param_buffer')
                 for optim_instance in optimizer.chained_optimizers:
                     if isinstance(optim_instance, DistributedOptimizer):
                         optim_instance._copy_main_params_to_param_buffer()
+                nvtx_range_pop(suffix=f'copy_main_params_to_param_buffer')
 
         # Forward pass.
         if save_dgrads_in_this_iteration:
             enable_dgrad_logging(model, args.save)
-        nvtx_range_push(suffix=f'forward_backward_func[it={iteration}]')
+        nvtx_range_push(suffix=f'forward_backward_func')
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=data_iterator,
@@ -1666,12 +1674,12 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
             adjust_tensor_shapes_fn=adjust_tensor_shapes_fn,
             force_all_reduce=save_wgrads_in_this_iteration,
         )
-        nvtx_range_pop(suffix=f'forward_backward_func[it={iteration}]')
+        nvtx_range_pop(suffix=f'forward_backward_func')
 
         if save_dgrads_in_this_iteration:
-            nvtx_range_push(suffix=f'save_dgrads[it={iteration}]')
+            nvtx_range_push(suffix=f'save_dgrads')
             save_dgrads(iteration + 1)
-            nvtx_range_pop(suffix=f'save_dgrads[it={iteration}]')
+            nvtx_range_pop(suffix=f'save_dgrads')
             disable_dgrad_logging()
 
         # Reset force_all_reduce field.
@@ -1681,7 +1689,7 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
     # Checkpoint main_grads.
     if save_wgrads_in_this_iteration:
         # Collect state_dict of wgrads (each param's .main_grad field).
-        nvtx_range_push(suffix=f'checkpoint_wgrads[it={iteration}]')
+        nvtx_range_push(suffix=f'save_grads')
         state_dict = defaultdict(dict)
         for model_chunk_id, model_chunk in enumerate(model):
             model_chunk_name = f"model_chunk{model_chunk_id}"
@@ -1693,7 +1701,7 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
 
         # iteration is 0-indexed, move to 1-indexed for checkpoint name and logging.
         save_grads(args.save, state_dict, iteration + 1, "wgrads")
-        nvtx_range_pop(suffix=f'checkpoint_wgrads[it={iteration}]')
+        nvtx_range_pop(suffix=f'save_grads')
 
     should_checkpoint, should_exit, exit_code = rerun_state_machine.should_checkpoint_and_exit()
     if should_exit:
@@ -1701,7 +1709,9 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
+        nvtx_range_push(suffix=f'empty_unused_memory')
         torch.cuda.empty_cache()
+        nvtx_range_pop(suffix=f'empty_unused_memory')
 
     # Vision gradients.
     if args.vision_pretraining and args.vision_pretraining_type == "dino":
@@ -1738,8 +1748,10 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
 
     # Vision momentum.
     if args.vision_pretraining and args.vision_pretraining_type == "dino":
+        nvtx_range_push(suffix=f'vision_pretraining.update_momentum')
         unwrapped_model = unwrap_model(model[0])
         unwrapped_model.update_momentum(args.curr_iteration)
+        nvtx_range_pop(suffix=f'vision_pretraining.update_momentum')
 
     # Update learning rate.
     if update_successful:
@@ -1751,7 +1763,9 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
 
     # Empty unused memory.
     if args.empty_unused_memory_level >= 2:
+        nvtx_range_push(suffix=f'empty_unused_memory_level (after optimizer step)')
         torch.cuda.empty_cache()
+        nvtx_range_pop(suffix=f'empty_unused_memory_level (after optimizer step)')
 
     if mpu.is_pipeline_last_stage(ignore_virtual=True):
         # Average loss across microbatches.

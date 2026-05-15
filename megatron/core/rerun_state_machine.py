@@ -17,6 +17,12 @@ import torch
 from megatron.core._rank_utils import log_single_rank, safe_get_rank
 from megatron.core.dist_checkpointing.mapping import ShardedObject
 
+from megatron.core.utils import (
+    nvtx_range_push, 
+    nvtx_range_pop, 
+    unwrap_model
+)
+
 """DISCLAIMER: THIS IS AN EXPERIMENTAL FEATURE.
 
 The rerun state machine implementation in this file is alpha-level code to help
@@ -288,6 +294,8 @@ class RerunStateMachine:
                 ...
                 optimizer.step()
         """
+
+        nvtx_range_push('should_run_forward_backward')
 
         self.validation_counts = defaultdict(int)
 
