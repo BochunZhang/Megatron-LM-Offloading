@@ -1685,6 +1685,7 @@ def train_step(forward_step_func, data_iterator, model, optimizer, opt_param_sch
         # Reset force_all_reduce field.
         for model_chunk in model:
             model_chunk.force_all_reduce = False
+    nvtx_range_pop('should_run_forward_backward')
 
     # Checkpoint main_grads.
     if save_wgrads_in_this_iteration:
