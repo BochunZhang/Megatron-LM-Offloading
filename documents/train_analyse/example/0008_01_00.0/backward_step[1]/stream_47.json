@@ -1,0 +1,2057 @@
+[
+  {
+    "type": "NvtxEvent",
+    "text": "megatron.core.pipeline_parallel.schedules.forward_backward_no_pipelining.backward_step[1]",
+    "stream_start_ns": 550782028,
+    "stream_end_ns": 636429740,
+    "stream_duration_ns": 85647712,
+    "stream_children": [
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 9899",
+        "stream_start_ns": 550782028,
+        "stream_end_ns": 551435084,
+        "stream_duration_ns": 653056,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23297, op_id = 9900, sizes = [[66368, 4096]], input_op_ids = [(9897,0)]",
+            "stream_start_ns": 550782028,
+            "stream_end_ns": 551435084,
+            "stream_duration_ns": 653056,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading mlp_norm",
+                "stream_start_ns": 550782028,
+                "stream_end_ns": 551435084,
+                "stream_duration_ns": 653056,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 9903, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(9902,0), (8750,0), (0,-1)]",
+                    "stream_start_ns": 550782028,
+                    "stream_end_ns": 551435084,
+                    "stream_duration_ns": 653056,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 49504,
+                        "stream_start_ns": 550782028,
+                        "stream_end_ns": 551435084,
+                        "stream_duration_ns": 653056,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 9952",
+        "stream_start_ns": 553439660,
+        "stream_end_ns": 556502892,
+        "stream_duration_ns": 3063232,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23294, op_id = 9953, sizes = [[66368, 7168]], input_op_ids = [(9935,0)]",
+            "stream_start_ns": 553439660,
+            "stream_end_ns": 556502892,
+            "stream_duration_ns": 3063232,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading moe_act",
+                "stream_start_ns": 553439660,
+                "stream_end_ns": 556502892,
+                "stream_duration_ns": 3063232,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 9956, sizes = [[66080, 4096], [66080, 4096], []], input_op_ids = [(9955,0), (8664,0), (0,-1)]",
+                    "stream_start_ns": 553439660,
+                    "stream_end_ns": 556502892,
+                    "stream_duration_ns": 3063232,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 50166,
+                        "stream_start_ns": 553439660,
+                        "stream_end_ns": 556502892,
+                        "stream_duration_ns": 3063232,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 541327360
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10417",
+        "stream_start_ns": 559873036,
+        "stream_end_ns": 565250348,
+        "stream_duration_ns": 5377312,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23243, op_id = 10418, sizes = [[4096, 2, 7168]], input_op_ids = [(10410,0)]",
+            "stream_start_ns": 559873036,
+            "stream_end_ns": 565250348,
+            "stream_duration_ns": 5377312,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading expert_fc1",
+                "stream_start_ns": 559873036,
+                "stream_end_ns": 565250348,
+                "stream_duration_ns": 5377312,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10421, sizes = [[66080, 7168], [66080, 7168], []], input_op_ids = [(10420,0), (8633,0), (0,-1)]",
+                    "stream_start_ns": 559873036,
+                    "stream_end_ns": 565250348,
+                    "stream_duration_ns": 5377312,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 51606,
+                        "stream_start_ns": 559873036,
+                        "stream_end_ns": 565250348,
+                        "stream_duration_ns": 5377312,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 947322880
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10451",
+        "stream_start_ns": 565251916,
+        "stream_end_ns": 565904108,
+        "stream_duration_ns": 652192,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23238, op_id = 10452, sizes = [[4096, 2, 16384]], input_op_ids = [(10446,0)]",
+            "stream_start_ns": 565251916,
+            "stream_end_ns": 565904108,
+            "stream_duration_ns": 652192,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_norm",
+                "stream_start_ns": 565251916,
+                "stream_end_ns": 565904108,
+                "stream_duration_ns": 652192,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10455, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(10454,0), (8150,0), (0,-1)]",
+                    "stream_start_ns": 565251916,
+                    "stream_end_ns": 565904108,
+                    "stream_duration_ns": 652192,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 51893,
+                        "stream_start_ns": 565251916,
+                        "stream_end_ns": 565904108,
+                        "stream_duration_ns": 652192,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10470",
+        "stream_start_ns": 565906252,
+        "stream_end_ns": 567418668,
+        "stream_duration_ns": 1512416,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23234, op_id = 10471, sizes = [[4096, 2, 128, 192]], input_op_ids = [(10466,0)]",
+            "stream_start_ns": 565906252,
+            "stream_end_ns": 567418668,
+            "stream_duration_ns": 1512416,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_proj",
+                "stream_start_ns": 565906252,
+                "stream_end_ns": 567418668,
+                "stream_duration_ns": 1512416,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10474, sizes = [[4096, 2, 16384], [4096, 2, 16384], []], input_op_ids = [(10473,0), (8132,0), (0,-1)]",
+                    "stream_start_ns": 565906252,
+                    "stream_end_ns": 567418668,
+                    "stream_duration_ns": 1512416,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 52053,
+                        "stream_start_ns": 565906252,
+                        "stream_end_ns": 567418668,
+                        "stream_duration_ns": 1512416,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10625",
+        "stream_start_ns": 567421100,
+        "stream_end_ns": 574985292,
+        "stream_duration_ns": 7564192,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23221, op_id = 10626, sizes = [[4096, 2, 7168]], input_op_ids = [(10620,0)]",
+            "stream_start_ns": 567421100,
+            "stream_end_ns": 574985292,
+            "stream_duration_ns": 7564192,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading core_attn",
+                "stream_start_ns": 567421100,
+                "stream_end_ns": 574985292,
+                "stream_duration_ns": 7564192,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10629, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(10628,0), (8107,0), (0,-1)]",
+                    "stream_start_ns": 567421100,
+                    "stream_end_ns": 569696844,
+                    "stream_duration_ns": 2275744,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 52990,
+                        "stream_start_ns": 567421100,
+                        "stream_end_ns": 569696844,
+                        "stream_duration_ns": 2275744,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10632, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(10631,0), (8109,0), (0,-1)]",
+                    "stream_start_ns": 569699788,
+                    "stream_end_ns": 571962540,
+                    "stream_duration_ns": 2262752,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53013,
+                        "stream_start_ns": 569699788,
+                        "stream_end_ns": 571962540,
+                        "stream_duration_ns": 2262752,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10635, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(10634,0), (8111,0), (0,-1)]",
+                    "stream_start_ns": 571964780,
+                    "stream_end_ns": 573462412,
+                    "stream_duration_ns": 1497632,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53036,
+                        "stream_start_ns": 571964780,
+                        "stream_end_ns": 573462412,
+                        "stream_duration_ns": 1497632,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10638, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(10637,0), (8113,0), (0,-1)]",
+                    "stream_start_ns": 573464172,
+                    "stream_end_ns": 574958124,
+                    "stream_duration_ns": 1493952,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53059,
+                        "stream_start_ns": 573464172,
+                        "stream_end_ns": 574958124,
+                        "stream_duration_ns": 1493952,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10641, sizes = [[2, 128, 4096, 1], [2, 128, 4096, 1], []], input_op_ids = [(10640,0), (8115,0), (0,-1)]",
+                    "stream_start_ns": 574959756,
+                    "stream_end_ns": 574985292,
+                    "stream_duration_ns": 25536,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53082,
+                        "stream_start_ns": 574959756,
+                        "stream_end_ns": 574985292,
+                        "stream_duration_ns": 25536,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10660",
+        "stream_start_ns": 574986860,
+        "stream_end_ns": 576067212,
+        "stream_duration_ns": 1080352,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23219, op_id = 10661, sizes = [[4096, 2, 7168]], input_op_ids = [(10653,0)]",
+            "stream_start_ns": 574986860,
+            "stream_end_ns": 576067212,
+            "stream_duration_ns": 1080352,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading qkv_linear",
+                "stream_start_ns": 574986860,
+                "stream_end_ns": 576067212,
+                "stream_duration_ns": 1080352,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10664, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(10663,0), (8073,0), (0,-1)]",
+                    "stream_start_ns": 574986860,
+                    "stream_end_ns": 575317644,
+                    "stream_duration_ns": 330784,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53231,
+                        "stream_start_ns": 574986860,
+                        "stream_end_ns": 575317644,
+                        "stream_duration_ns": 330784,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10667, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(10666,0), (8075,0), (0,-1)]",
+                    "stream_start_ns": 575322988,
+                    "stream_end_ns": 575337324,
+                    "stream_duration_ns": 14336,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53254,
+                        "stream_start_ns": 575322988,
+                        "stream_end_ns": 575337324,
+                        "stream_duration_ns": 14336,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10670, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(10669,0), (8077,0), (0,-1)]",
+                    "stream_start_ns": 575343436,
+                    "stream_end_ns": 575676428,
+                    "stream_duration_ns": 332992,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53277,
+                        "stream_start_ns": 575343436,
+                        "stream_end_ns": 575676428,
+                        "stream_duration_ns": 332992,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10673, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(10672,0), (8079,0), (0,-1)]",
+                    "stream_start_ns": 575691052,
+                    "stream_end_ns": 575707596,
+                    "stream_duration_ns": 16544,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53300,
+                        "stream_start_ns": 575691052,
+                        "stream_end_ns": 575707596,
+                        "stream_duration_ns": 16544,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10676, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(10675,0), (8081,0), (0,-1)]",
+                    "stream_start_ns": 575720012,
+                    "stream_end_ns": 575859308,
+                    "stream_duration_ns": 139296,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53323,
+                        "stream_start_ns": 575720012,
+                        "stream_end_ns": 575859308,
+                        "stream_duration_ns": 139296,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 25165824
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10679, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(10678,0), (8083,0), (0,-1)]",
+                    "stream_start_ns": 575878444,
+                    "stream_end_ns": 575951404,
+                    "stream_duration_ns": 72960,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53346,
+                        "stream_start_ns": 575878444,
+                        "stream_end_ns": 575951404,
+                        "stream_duration_ns": 72960,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 12582912
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10682, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(10681,0), (8085,0), (0,-1)]",
+                    "stream_start_ns": 575963788,
+                    "stream_end_ns": 576015340,
+                    "stream_duration_ns": 51552,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53369,
+                        "stream_start_ns": 575963788,
+                        "stream_end_ns": 576015340,
+                        "stream_duration_ns": 51552,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 8388608
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10685, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(10684,0), (8087,0), (0,-1)]",
+                    "stream_start_ns": 576031884,
+                    "stream_end_ns": 576067212,
+                    "stream_duration_ns": 35328,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 53392,
+                        "stream_start_ns": 576031884,
+                        "stream_end_ns": 576067212,
+                        "stream_duration_ns": 35328,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10927",
+        "stream_start_ns": 576078220,
+        "stream_end_ns": 576729452,
+        "stream_duration_ns": 651232,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23205, op_id = 10928, sizes = [[66080, 4096]], input_op_ids = [(10925,0)]",
+            "stream_start_ns": 576078220,
+            "stream_end_ns": 576729452,
+            "stream_duration_ns": 651232,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading mlp_norm",
+                "stream_start_ns": 576078220,
+                "stream_end_ns": 576729452,
+                "stream_duration_ns": 651232,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10931, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(10930,0), (7985,0), (0,-1)]",
+                    "stream_start_ns": 576078220,
+                    "stream_end_ns": 576729452,
+                    "stream_duration_ns": 651232,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 54409,
+                        "stream_start_ns": 576078220,
+                        "stream_end_ns": 576729452,
+                        "stream_duration_ns": 651232,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 10980",
+        "stream_start_ns": 576731020,
+        "stream_end_ns": 579785292,
+        "stream_duration_ns": 3054272,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23202, op_id = 10981, sizes = [[66080, 7168]], input_op_ids = [(10963,0)]",
+            "stream_start_ns": 576731020,
+            "stream_end_ns": 579785292,
+            "stream_duration_ns": 3054272,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading moe_act",
+                "stream_start_ns": 576731020,
+                "stream_end_ns": 579785292,
+                "stream_duration_ns": 3054272,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 10984, sizes = [[66240, 4096], [66240, 4096], []], input_op_ids = [(10983,0), (7899,0), (0,-1)]",
+                    "stream_start_ns": 576731020,
+                    "stream_end_ns": 579785292,
+                    "stream_duration_ns": 3054272,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 55005,
+                        "stream_start_ns": 576731020,
+                        "stream_end_ns": 579785292,
+                        "stream_duration_ns": 3054272,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 542638080
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11445",
+        "stream_start_ns": 582417548,
+        "stream_end_ns": 587773068,
+        "stream_duration_ns": 5355520,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23151, op_id = 11446, sizes = [[4096, 2, 7168]], input_op_ids = [(11438,0)]",
+            "stream_start_ns": 582417548,
+            "stream_end_ns": 587773068,
+            "stream_duration_ns": 5355520,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading expert_fc1",
+                "stream_start_ns": 582417548,
+                "stream_end_ns": 587773068,
+                "stream_duration_ns": 5355520,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11449, sizes = [[66240, 7168], [66240, 7168], []], input_op_ids = [(11448,0), (7868,0), (0,-1)]",
+                    "stream_start_ns": 582417548,
+                    "stream_end_ns": 587773068,
+                    "stream_duration_ns": 5355520,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 56330,
+                        "stream_start_ns": 582417548,
+                        "stream_end_ns": 587773068,
+                        "stream_duration_ns": 5355520,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 949616640
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11479",
+        "stream_start_ns": 587775180,
+        "stream_end_ns": 588437996,
+        "stream_duration_ns": 662816,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23146, op_id = 11480, sizes = [[4096, 2, 16384]], input_op_ids = [(11474,0)]",
+            "stream_start_ns": 587775180,
+            "stream_end_ns": 588437996,
+            "stream_duration_ns": 662816,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_norm",
+                "stream_start_ns": 587775180,
+                "stream_end_ns": 588437996,
+                "stream_duration_ns": 662816,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11483, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(11482,0), (7385,0), (0,-1)]",
+                    "stream_start_ns": 587775180,
+                    "stream_end_ns": 588437996,
+                    "stream_duration_ns": 662816,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 56603,
+                        "stream_start_ns": 587775180,
+                        "stream_end_ns": 588437996,
+                        "stream_duration_ns": 662816,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11498",
+        "stream_start_ns": 589205484,
+        "stream_end_ns": 590726124,
+        "stream_duration_ns": 1520640,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23142, op_id = 11499, sizes = [[4096, 2, 128, 192]], input_op_ids = [(11494,0)]",
+            "stream_start_ns": 589205484,
+            "stream_end_ns": 590726124,
+            "stream_duration_ns": 1520640,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_proj",
+                "stream_start_ns": 589205484,
+                "stream_end_ns": 590726124,
+                "stream_duration_ns": 1520640,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11502, sizes = [[4096, 2, 16384], [4096, 2, 16384], []], input_op_ids = [(11501,0), (7367,0), (0,-1)]",
+                    "stream_start_ns": 589205484,
+                    "stream_end_ns": 590726124,
+                    "stream_duration_ns": 1520640,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 56761,
+                        "stream_start_ns": 589205484,
+                        "stream_end_ns": 590726124,
+                        "stream_duration_ns": 1520640,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11653",
+        "stream_start_ns": 591276332,
+        "stream_end_ns": 598729132,
+        "stream_duration_ns": 7452800,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23129, op_id = 11654, sizes = [[4096, 2, 7168]], input_op_ids = [(11648,0)]",
+            "stream_start_ns": 591276332,
+            "stream_end_ns": 598729132,
+            "stream_duration_ns": 7452800,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading core_attn",
+                "stream_start_ns": 591276332,
+                "stream_end_ns": 598729132,
+                "stream_duration_ns": 7452800,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11657, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(11656,0), (7342,0), (0,-1)]",
+                    "stream_start_ns": 591276332,
+                    "stream_end_ns": 593561804,
+                    "stream_duration_ns": 2285472,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57670,
+                        "stream_start_ns": 591276332,
+                        "stream_end_ns": 593561804,
+                        "stream_duration_ns": 2285472,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11660, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(11659,0), (7344,0), (0,-1)]",
+                    "stream_start_ns": 593563372,
+                    "stream_end_ns": 595898252,
+                    "stream_duration_ns": 2334880,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57691,
+                        "stream_start_ns": 593563372,
+                        "stream_end_ns": 595898252,
+                        "stream_duration_ns": 2334880,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11663, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(11662,0), (7346,0), (0,-1)]",
+                    "stream_start_ns": 595899820,
+                    "stream_end_ns": 597358828,
+                    "stream_duration_ns": 1459008,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57712,
+                        "stream_start_ns": 595899820,
+                        "stream_end_ns": 597358828,
+                        "stream_duration_ns": 1459008,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11666, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(11665,0), (7348,0), (0,-1)]",
+                    "stream_start_ns": 597360428,
+                    "stream_end_ns": 598699948,
+                    "stream_duration_ns": 1339520,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57733,
+                        "stream_start_ns": 597360428,
+                        "stream_end_ns": 598699948,
+                        "stream_duration_ns": 1339520,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11669, sizes = [[2, 128, 4096, 1], [2, 128, 4096, 1], []], input_op_ids = [(11668,0), (7350,0), (0,-1)]",
+                    "stream_start_ns": 598701516,
+                    "stream_end_ns": 598729132,
+                    "stream_duration_ns": 27616,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57754,
+                        "stream_start_ns": 598701516,
+                        "stream_end_ns": 598729132,
+                        "stream_duration_ns": 27616,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11688",
+        "stream_start_ns": 598730700,
+        "stream_end_ns": 599615596,
+        "stream_duration_ns": 884896,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23127, op_id = 11689, sizes = [[4096, 2, 7168]], input_op_ids = [(11681,0)]",
+            "stream_start_ns": 598730700,
+            "stream_end_ns": 599615596,
+            "stream_duration_ns": 884896,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading qkv_linear",
+                "stream_start_ns": 598730700,
+                "stream_end_ns": 599615596,
+                "stream_duration_ns": 884896,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11692, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(11691,0), (7308,0), (0,-1)]",
+                    "stream_start_ns": 598730700,
+                    "stream_end_ns": 599055436,
+                    "stream_duration_ns": 324736,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57896,
+                        "stream_start_ns": 598730700,
+                        "stream_end_ns": 599055436,
+                        "stream_duration_ns": 324736,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11695, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(11694,0), (7310,0), (0,-1)]",
+                    "stream_start_ns": 599057004,
+                    "stream_end_ns": 599067756,
+                    "stream_duration_ns": 10752,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57917,
+                        "stream_start_ns": 599057004,
+                        "stream_end_ns": 599067756,
+                        "stream_duration_ns": 10752,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11698, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(11697,0), (7312,0), (0,-1)]",
+                    "stream_start_ns": 599069292,
+                    "stream_end_ns": 599350764,
+                    "stream_duration_ns": 281472,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57938,
+                        "stream_start_ns": 599069292,
+                        "stream_end_ns": 599350764,
+                        "stream_duration_ns": 281472,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11701, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(11700,0), (7314,0), (0,-1)]",
+                    "stream_start_ns": 599352332,
+                    "stream_end_ns": 599362956,
+                    "stream_duration_ns": 10624,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57959,
+                        "stream_start_ns": 599352332,
+                        "stream_end_ns": 599362956,
+                        "stream_duration_ns": 10624,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11704, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(11703,0), (7316,0), (0,-1)]",
+                    "stream_start_ns": 599364524,
+                    "stream_end_ns": 599485292,
+                    "stream_duration_ns": 120768,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 57980,
+                        "stream_start_ns": 599364524,
+                        "stream_end_ns": 599485292,
+                        "stream_duration_ns": 120768,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 25165824
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11707, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(11706,0), (7318,0), (0,-1)]",
+                    "stream_start_ns": 599486892,
+                    "stream_end_ns": 599548268,
+                    "stream_duration_ns": 61376,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 58001,
+                        "stream_start_ns": 599486892,
+                        "stream_end_ns": 599548268,
+                        "stream_duration_ns": 61376,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 12582912
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11710, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(11709,0), (7320,0), (0,-1)]",
+                    "stream_start_ns": 599549836,
+                    "stream_end_ns": 599591596,
+                    "stream_duration_ns": 41760,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 58022,
+                        "stream_start_ns": 599549836,
+                        "stream_end_ns": 599591596,
+                        "stream_duration_ns": 41760,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 8388608
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11713, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(11712,0), (7322,0), (0,-1)]",
+                    "stream_start_ns": 599593164,
+                    "stream_end_ns": 599615596,
+                    "stream_duration_ns": 22432,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 58043,
+                        "stream_start_ns": 599593164,
+                        "stream_end_ns": 599615596,
+                        "stream_duration_ns": 22432,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 11955",
+        "stream_start_ns": 600398476,
+        "stream_end_ns": 600957740,
+        "stream_duration_ns": 559264,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23113, op_id = 11956, sizes = [[66240, 4096]], input_op_ids = [(11953,0)]",
+            "stream_start_ns": 600398476,
+            "stream_end_ns": 600957740,
+            "stream_duration_ns": 559264,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_norm",
+                "stream_start_ns": 600398476,
+                "stream_end_ns": 600957740,
+                "stream_duration_ns": 559264,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 11959, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(11958,0), (7187,0), (0,-1)]",
+                    "stream_start_ns": 600398476,
+                    "stream_end_ns": 600957740,
+                    "stream_duration_ns": 559264,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 59033,
+                        "stream_start_ns": 600398476,
+                        "stream_end_ns": 600957740,
+                        "stream_duration_ns": 559264,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12008",
+        "stream_start_ns": 604463116,
+        "stream_end_ns": 605735468,
+        "stream_duration_ns": 1272352,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23110, op_id = 12009, sizes = [[66240, 7168]], input_op_ids = [(11991,0)]",
+            "stream_start_ns": 604463116,
+            "stream_end_ns": 605735468,
+            "stream_duration_ns": 1272352,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_proj",
+                "stream_start_ns": 604463116,
+                "stream_end_ns": 605735468,
+                "stream_duration_ns": 1272352,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12012, sizes = [[4096, 2, 16384], [4096, 2, 16384], []], input_op_ids = [(12011,0), (7169,0), (0,-1)]",
+                    "stream_start_ns": 604463116,
+                    "stream_end_ns": 605735468,
+                    "stream_duration_ns": 1272352,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 59615,
+                        "stream_start_ns": 604463116,
+                        "stream_end_ns": 605735468,
+                        "stream_duration_ns": 1272352,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12473",
+        "stream_start_ns": 612867788,
+        "stream_end_ns": 620445420,
+        "stream_duration_ns": 7577632,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23059, op_id = 12474, sizes = [[4096, 2, 7168]], input_op_ids = [(12466,0)]",
+            "stream_start_ns": 612867788,
+            "stream_end_ns": 620445420,
+            "stream_duration_ns": 7577632,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading core_attn",
+                "stream_start_ns": 612867788,
+                "stream_end_ns": 620445420,
+                "stream_duration_ns": 7577632,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12477, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(12476,0), (7144,0), (0,-1)]",
+                    "stream_start_ns": 612867788,
+                    "stream_end_ns": 615139980,
+                    "stream_duration_ns": 2272192,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 60928,
+                        "stream_start_ns": 612867788,
+                        "stream_end_ns": 615139980,
+                        "stream_duration_ns": 2272192,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12480, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(12479,0), (7146,0), (0,-1)]",
+                    "stream_start_ns": 615141612,
+                    "stream_end_ns": 617418796,
+                    "stream_duration_ns": 2277184,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 60949,
+                        "stream_start_ns": 615141612,
+                        "stream_end_ns": 617418796,
+                        "stream_duration_ns": 2277184,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12483, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(12482,0), (7148,0), (0,-1)]",
+                    "stream_start_ns": 617420492,
+                    "stream_end_ns": 618922252,
+                    "stream_duration_ns": 1501760,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 60970,
+                        "stream_start_ns": 617420492,
+                        "stream_end_ns": 618922252,
+                        "stream_duration_ns": 1501760,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12486, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(12485,0), (7150,0), (0,-1)]",
+                    "stream_start_ns": 618923820,
+                    "stream_end_ns": 620416460,
+                    "stream_duration_ns": 1492640,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 60991,
+                        "stream_start_ns": 618923820,
+                        "stream_end_ns": 620416460,
+                        "stream_duration_ns": 1492640,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12489, sizes = [[2, 128, 4096, 1], [2, 128, 4096, 1], []], input_op_ids = [(12488,0), (7152,0), (0,-1)]",
+                    "stream_start_ns": 620418060,
+                    "stream_end_ns": 620445420,
+                    "stream_duration_ns": 27360,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61012,
+                        "stream_start_ns": 620418060,
+                        "stream_end_ns": 620445420,
+                        "stream_duration_ns": 27360,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12519",
+        "stream_start_ns": 620446988,
+        "stream_end_ns": 621451468,
+        "stream_duration_ns": 1004480,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23054, op_id = 12520, sizes = [[4096, 2, 16384]], input_op_ids = [(12514,0)]",
+            "stream_start_ns": 620446988,
+            "stream_end_ns": 621451468,
+            "stream_duration_ns": 1004480,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading qkv_linear",
+                "stream_start_ns": 620446988,
+                "stream_end_ns": 621451468,
+                "stream_duration_ns": 1004480,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12523, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(12522,0), (7110,0), (0,-1)]",
+                    "stream_start_ns": 620446988,
+                    "stream_end_ns": 620779788,
+                    "stream_duration_ns": 332800,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61273,
+                        "stream_start_ns": 620446988,
+                        "stream_end_ns": 620779788,
+                        "stream_duration_ns": 332800,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12526, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(12525,0), (7112,0), (0,-1)]",
+                    "stream_start_ns": 620783532,
+                    "stream_end_ns": 620798732,
+                    "stream_duration_ns": 15200,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61294,
+                        "stream_start_ns": 620783532,
+                        "stream_end_ns": 620798732,
+                        "stream_duration_ns": 15200,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12529, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(12528,0), (7114,0), (0,-1)]",
+                    "stream_start_ns": 620802220,
+                    "stream_end_ns": 621134188,
+                    "stream_duration_ns": 331968,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61315,
+                        "stream_start_ns": 620802220,
+                        "stream_end_ns": 621134188,
+                        "stream_duration_ns": 331968,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12532, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(12531,0), (7116,0), (0,-1)]",
+                    "stream_start_ns": 621136684,
+                    "stream_end_ns": 621150476,
+                    "stream_duration_ns": 13792,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61336,
+                        "stream_start_ns": 621136684,
+                        "stream_end_ns": 621150476,
+                        "stream_duration_ns": 13792,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12535, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(12534,0), (7118,0), (0,-1)]",
+                    "stream_start_ns": 621153100,
+                    "stream_end_ns": 621296300,
+                    "stream_duration_ns": 143200,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61357,
+                        "stream_start_ns": 621153100,
+                        "stream_end_ns": 621296300,
+                        "stream_duration_ns": 143200,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 25165824
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12538, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(12537,0), (7120,0), (0,-1)]",
+                    "stream_start_ns": 621298028,
+                    "stream_end_ns": 621372812,
+                    "stream_duration_ns": 74784,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61378,
+                        "stream_start_ns": 621298028,
+                        "stream_end_ns": 621372812,
+                        "stream_duration_ns": 74784,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 12582912
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12541, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(12540,0), (7122,0), (0,-1)]",
+                    "stream_start_ns": 621374540,
+                    "stream_end_ns": 621424204,
+                    "stream_duration_ns": 49664,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61399,
+                        "stream_start_ns": 621374540,
+                        "stream_end_ns": 621424204,
+                        "stream_duration_ns": 49664,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 8388608
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12544, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(12543,0), (7124,0), (0,-1)]",
+                    "stream_start_ns": 621425932,
+                    "stream_end_ns": 621451468,
+                    "stream_duration_ns": 25536,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61420,
+                        "stream_start_ns": 621425932,
+                        "stream_end_ns": 621451468,
+                        "stream_duration_ns": 25536,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12559",
+        "stream_start_ns": 621453164,
+        "stream_end_ns": 622126988,
+        "stream_duration_ns": 673824,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23050, op_id = 12560, sizes = [[4096, 2, 128, 192]], input_op_ids = [(12555,0)]",
+            "stream_start_ns": 621453164,
+            "stream_end_ns": 622126988,
+            "stream_duration_ns": 673824,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_norm",
+                "stream_start_ns": 621453164,
+                "stream_end_ns": 622126988,
+                "stream_duration_ns": 673824,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12563, sizes = [[8192, 7168], [8192, 7168], []], input_op_ids = [(12562,0), (6989,0), (0,-1)]",
+                    "stream_start_ns": 621453164,
+                    "stream_end_ns": 622126988,
+                    "stream_duration_ns": 673824,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 61578,
+                        "stream_start_ns": 621453164,
+                        "stream_end_ns": 622126988,
+                        "stream_duration_ns": 673824,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 117440512
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12714",
+        "stream_start_ns": 623055372,
+        "stream_end_ns": 624593804,
+        "stream_duration_ns": 1538432,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23037, op_id = 12715, sizes = [[4096, 2, 7168]], input_op_ids = [(12709,0)]",
+            "stream_start_ns": 623055372,
+            "stream_end_ns": 624593804,
+            "stream_duration_ns": 1538432,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading attn_proj",
+                "stream_start_ns": 623055372,
+                "stream_end_ns": 624593804,
+                "stream_duration_ns": 1538432,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12718, sizes = [[4096, 2, 16384], [4096, 2, 16384], []], input_op_ids = [(12717,0), (6971,0), (0,-1)]",
+                    "stream_start_ns": 623055372,
+                    "stream_end_ns": 624593804,
+                    "stream_duration_ns": 1538432,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62481,
+                        "stream_start_ns": 623055372,
+                        "stream_end_ns": 624593804,
+                        "stream_duration_ns": 1538432,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12737",
+        "stream_start_ns": 624595436,
+        "stream_end_ns": 632117196,
+        "stream_duration_ns": 7521760,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23035, op_id = 12738, sizes = [[4096, 2, 7168]], input_op_ids = [(12730,0)]",
+            "stream_start_ns": 624595436,
+            "stream_end_ns": 632117196,
+            "stream_duration_ns": 7521760,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading core_attn",
+                "stream_start_ns": 624595436,
+                "stream_end_ns": 632117196,
+                "stream_duration_ns": 7521760,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12741, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(12740,0), (6946,0), (0,-1)]",
+                    "stream_start_ns": 624595436,
+                    "stream_end_ns": 626969484,
+                    "stream_duration_ns": 2374048,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62623,
+                        "stream_start_ns": 624595436,
+                        "stream_end_ns": 626969484,
+                        "stream_duration_ns": 2374048,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12744, sizes = [[4096, 2, 128, 192], [4096, 2, 128, 192], []], input_op_ids = [(12743,0), (6948,0), (0,-1)]",
+                    "stream_start_ns": 626972364,
+                    "stream_end_ns": 629284588,
+                    "stream_duration_ns": 2312224,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62644,
+                        "stream_start_ns": 626972364,
+                        "stream_end_ns": 629284588,
+                        "stream_duration_ns": 2312224,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 402653184
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12747, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(12746,0), (6950,0), (0,-1)]",
+                    "stream_start_ns": 629287052,
+                    "stream_end_ns": 630790156,
+                    "stream_duration_ns": 1503104,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62665,
+                        "stream_start_ns": 629287052,
+                        "stream_end_ns": 630790156,
+                        "stream_duration_ns": 1503104,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12750, sizes = [[4096, 2, 128, 128], [4096, 2, 128, 128], []], input_op_ids = [(12749,0), (6952,0), (0,-1)]",
+                    "stream_start_ns": 630791756,
+                    "stream_end_ns": 632090892,
+                    "stream_duration_ns": 1299136,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62686,
+                        "stream_start_ns": 630791756,
+                        "stream_end_ns": 632090892,
+                        "stream_duration_ns": 1299136,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 268435456
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12753, sizes = [[2, 128, 4096, 1], [2, 128, 4096, 1], []], input_op_ids = [(12752,0), (6954,0), (0,-1)]",
+                    "stream_start_ns": 632092940,
+                    "stream_end_ns": 632117196,
+                    "stream_duration_ns": 24256,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 62707,
+                        "stream_start_ns": 632092940,
+                        "stream_end_ns": 632117196,
+                        "stream_duration_ns": 24256,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: FineGrainedOffloadingGroupStartFunctionBackward, op_id = 12897",
+        "stream_start_ns": 635589868,
+        "stream_end_ns": 636429740,
+        "stream_duration_ns": 839872,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "FineGrainedOffloadingGroupStartFunctionBackward, seq = 23027, op_id = 12898, sizes = [[4096, 2, 16384]], input_op_ids = [(12892,0)]",
+            "stream_start_ns": 635589868,
+            "stream_end_ns": 636429740,
+            "stream_duration_ns": 839872,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "activation reloading qkv_linear",
+                "stream_start_ns": 635589868,
+                "stream_end_ns": 636429740,
+                "stream_duration_ns": 839872,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12901, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(12900,0), (6912,0), (0,-1)]",
+                    "stream_start_ns": 635589868,
+                    "stream_end_ns": 635871212,
+                    "stream_duration_ns": 281344,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63631,
+                        "stream_start_ns": 635589868,
+                        "stream_end_ns": 635871212,
+                        "stream_duration_ns": 281344,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12904, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(12903,0), (6914,0), (0,-1)]",
+                    "stream_start_ns": 635872908,
+                    "stream_end_ns": 635883788,
+                    "stream_duration_ns": 10880,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63654,
+                        "stream_start_ns": 635872908,
+                        "stream_end_ns": 635883788,
+                        "stream_duration_ns": 10880,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12907, sizes = [[4096, 2, 7168], [4096, 2, 7168], []], input_op_ids = [(12906,0), (6916,0), (0,-1)]",
+                    "stream_start_ns": 635885420,
+                    "stream_end_ns": 636165164,
+                    "stream_duration_ns": 279744,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63677,
+                        "stream_start_ns": 635885420,
+                        "stream_end_ns": 636165164,
+                        "stream_duration_ns": 279744,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 58720256
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12910, sizes = [[256, 7168], [256, 7168], []], input_op_ids = [(12909,0), (6918,0), (0,-1)]",
+                    "stream_start_ns": 636166732,
+                    "stream_end_ns": 636177356,
+                    "stream_duration_ns": 10624,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63700,
+                        "stream_start_ns": 636166732,
+                        "stream_end_ns": 636177356,
+                        "stream_duration_ns": 10624,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 1835008
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12913, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(12912,0), (6920,0), (0,-1)]",
+                    "stream_start_ns": 636178924,
+                    "stream_end_ns": 636299916,
+                    "stream_duration_ns": 120992,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63723,
+                        "stream_start_ns": 636178924,
+                        "stream_end_ns": 636299916,
+                        "stream_duration_ns": 120992,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 25165824
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12916, sizes = [[8192, 1536], [8192, 1536], []], input_op_ids = [(12915,0), (6922,0), (0,-1)]",
+                    "stream_start_ns": 636301484,
+                    "stream_end_ns": 636362860,
+                    "stream_duration_ns": 61376,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63746,
+                        "stream_start_ns": 636301484,
+                        "stream_end_ns": 636362860,
+                        "stream_duration_ns": 61376,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 12582912
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12919, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(12918,0), (6924,0), (0,-1)]",
+                    "stream_start_ns": 636364428,
+                    "stream_end_ns": 636406284,
+                    "stream_duration_ns": 41856,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63769,
+                        "stream_start_ns": 636364428,
+                        "stream_end_ns": 636406284,
+                        "stream_duration_ns": 41856,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 8388608
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "aten::copy_, op_id = 12922, sizes = [[8192, 512], [8192, 512], []], input_op_ids = [(12921,0), (6926,0), (0,-1)]",
+                    "stream_start_ns": 636407916,
+                    "stream_end_ns": 636429740,
+                    "stream_duration_ns": 21824,
+                    "stream_children": [
+                      {
+                        "type": "CudaEvent",
+                        "text": "cudaMemcpyAsync_v3020",
+                        "shortname": "Memcpy HtoD",
+                        "stream_id": "47",
+                        "correlation_id": 63792,
+                        "stream_start_ns": 636407916,
+                        "stream_end_ns": 636429740,
+                        "stream_duration_ns": 21824,
+                        "is_memcpy": true,
+                        "memcpy_type": "Memcpy HtoD",
+                        "memcpy_size_bytes": 4194304
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,761 @@
+[
+  {
+    "type": "NvtxEvent",
+    "text": "megatron.core.pipeline_parallel.schedules.forward_backward_no_pipelining.backward_step[3]",
+    "stream_start_ns": 1075725297,
+    "stream_end_ns": 1124561778,
+    "stream_duration_ns": 48836481,
+    "stream_children": [
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 23263",
+        "stream_start_ns": 1075725297,
+        "stream_end_ns": 1076703569,
+        "stream_duration_ns": 978272,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23996, op_id = 23283, sizes = [[65792, 7168]], input_op_ids = [(23260,0)]",
+            "stream_start_ns": 1075725297,
+            "stream_end_ns": 1076703569,
+            "stream_duration_ns": 978272,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1075725297,
+                "stream_end_ns": 1076703569,
+                "stream_duration_ns": 978272,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1075725297,
+                    "stream_end_ns": 1076048433,
+                    "stream_duration_ns": 323136,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1075725297,
+                        "stream_end_ns": 1075810161,
+                        "stream_duration_ns": 84864,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 116634,
+                            "stream_start_ns": 1075725297,
+                            "stream_end_ns": 1075810161,
+                            "stream_duration_ns": 84864,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1075977809,
+                        "stream_end_ns": 1076048433,
+                        "stream_duration_ns": 70624,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 116666,
+                            "stream_start_ns": 1075977809,
+                            "stream_end_ns": 1076048433,
+                            "stream_duration_ns": 70624,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1076365009,
+                    "stream_end_ns": 1076703569,
+                    "stream_duration_ns": 338560,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1076365009,
+                        "stream_end_ns": 1076453521,
+                        "stream_duration_ns": 88512,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 116840,
+                            "stream_start_ns": 1076365009,
+                            "stream_end_ns": 1076453521,
+                            "stream_duration_ns": 88512,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1076619825,
+                        "stream_end_ns": 1076703569,
+                        "stream_duration_ns": 83744,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 116872,
+                            "stream_start_ns": 1076619825,
+                            "stream_end_ns": 1076703569,
+                            "stream_duration_ns": 83744,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 23382",
+        "stream_start_ns": 1077877649,
+        "stream_end_ns": 1079813105,
+        "stream_duration_ns": 1935456,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23991, op_id = 23383, sizes = [[65792, 4096]], input_op_ids = [(23373,0)]",
+            "stream_start_ns": 1077877649,
+            "stream_end_ns": 1079813105,
+            "stream_duration_ns": 1935456,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1077877649,
+                "stream_end_ns": 1079813105,
+                "stream_duration_ns": 1935456,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1077877649,
+                    "stream_end_ns": 1078525137,
+                    "stream_duration_ns": 647488,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1077877649,
+                        "stream_end_ns": 1078023697,
+                        "stream_duration_ns": 146048,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 117502,
+                            "stream_start_ns": 1077877649,
+                            "stream_end_ns": 1078023697,
+                            "stream_duration_ns": 146048,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1078382193,
+                        "stream_end_ns": 1078525137,
+                        "stream_duration_ns": 142944,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 117534,
+                            "stream_start_ns": 1078382193,
+                            "stream_end_ns": 1078525137,
+                            "stream_duration_ns": 142944,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1079177521,
+                    "stream_end_ns": 1079813105,
+                    "stream_duration_ns": 635584,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1079177521,
+                        "stream_end_ns": 1079322705,
+                        "stream_duration_ns": 145184,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 117708,
+                            "stream_start_ns": 1079177521,
+                            "stream_end_ns": 1079322705,
+                            "stream_duration_ns": 145184,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1079668721,
+                        "stream_end_ns": 1079813105,
+                        "stream_duration_ns": 144384,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 117740,
+                            "stream_start_ns": 1079668721,
+                            "stream_end_ns": 1079813105,
+                            "stream_duration_ns": 144384,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 24291",
+        "stream_start_ns": 1096902802,
+        "stream_end_ns": 1097922258,
+        "stream_duration_ns": 1019456,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23904, op_id = 24311, sizes = [[66016, 7168]], input_op_ids = [(24288,0)]",
+            "stream_start_ns": 1096902802,
+            "stream_end_ns": 1097922258,
+            "stream_duration_ns": 1019456,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1096902802,
+                "stream_end_ns": 1097922258,
+                "stream_duration_ns": 1019456,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1096902802,
+                    "stream_end_ns": 1097228466,
+                    "stream_duration_ns": 325664,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1096902802,
+                        "stream_end_ns": 1096987602,
+                        "stream_duration_ns": 84800,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 121482,
+                            "stream_start_ns": 1096902802,
+                            "stream_end_ns": 1096987602,
+                            "stream_duration_ns": 84800,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1097155794,
+                        "stream_end_ns": 1097228466,
+                        "stream_duration_ns": 72672,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 121514,
+                            "stream_start_ns": 1097155794,
+                            "stream_end_ns": 1097228466,
+                            "stream_duration_ns": 72672,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1097581394,
+                    "stream_end_ns": 1097922258,
+                    "stream_duration_ns": 340864,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1097581394,
+                        "stream_end_ns": 1097669714,
+                        "stream_duration_ns": 88320,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 121688,
+                            "stream_start_ns": 1097581394,
+                            "stream_end_ns": 1097669714,
+                            "stream_duration_ns": 88320,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1097836818,
+                        "stream_end_ns": 1097922258,
+                        "stream_duration_ns": 85440,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 121720,
+                            "stream_start_ns": 1097836818,
+                            "stream_end_ns": 1097922258,
+                            "stream_duration_ns": 85440,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 24410",
+        "stream_start_ns": 1099120306,
+        "stream_end_ns": 1101136690,
+        "stream_duration_ns": 2016384,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23899, op_id = 24411, sizes = [[66016, 4096]], input_op_ids = [(24401,0)]",
+            "stream_start_ns": 1099120306,
+            "stream_end_ns": 1101136690,
+            "stream_duration_ns": 2016384,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1099120306,
+                "stream_end_ns": 1101136690,
+                "stream_duration_ns": 2016384,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1099120306,
+                    "stream_end_ns": 1099770066,
+                    "stream_duration_ns": 649760,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1099120306,
+                        "stream_end_ns": 1099266034,
+                        "stream_duration_ns": 145728,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 122358,
+                            "stream_start_ns": 1099120306,
+                            "stream_end_ns": 1099266034,
+                            "stream_duration_ns": 145728,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1099625874,
+                        "stream_end_ns": 1099770066,
+                        "stream_duration_ns": 144192,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 122390,
+                            "stream_start_ns": 1099625874,
+                            "stream_end_ns": 1099770066,
+                            "stream_duration_ns": 144192,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1100497618,
+                    "stream_end_ns": 1101136690,
+                    "stream_duration_ns": 639072,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1100497618,
+                        "stream_end_ns": 1100643410,
+                        "stream_duration_ns": 145792,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 122565,
+                            "stream_start_ns": 1100497618,
+                            "stream_end_ns": 1100643410,
+                            "stream_duration_ns": 145792,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1100991346,
+                        "stream_end_ns": 1101136690,
+                        "stream_duration_ns": 145344,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 122597,
+                            "stream_start_ns": 1100991346,
+                            "stream_end_ns": 1101136690,
+                            "stream_duration_ns": 145344,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 25319",
+        "stream_start_ns": 1120268082,
+        "stream_end_ns": 1121322994,
+        "stream_duration_ns": 1054912,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23812, op_id = 25339, sizes = [[65920, 7168]], input_op_ids = [(25316,0)]",
+            "stream_start_ns": 1120268082,
+            "stream_end_ns": 1121322994,
+            "stream_duration_ns": 1054912,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1120268082,
+                "stream_end_ns": 1121322994,
+                "stream_duration_ns": 1054912,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1120268082,
+                    "stream_end_ns": 1120606930,
+                    "stream_duration_ns": 338848,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1120268082,
+                        "stream_end_ns": 1120352946,
+                        "stream_duration_ns": 84864,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 126325,
+                            "stream_start_ns": 1120268082,
+                            "stream_end_ns": 1120352946,
+                            "stream_duration_ns": 84864,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1120522034,
+                        "stream_end_ns": 1120606930,
+                        "stream_duration_ns": 84896,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_128x256_128x6_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 126357,
+                            "stream_start_ns": 1120522034,
+                            "stream_end_ns": 1120606930,
+                            "stream_duration_ns": 84896,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1120981266,
+                    "stream_end_ns": 1121322994,
+                    "stream_duration_ns": 341728,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1120981266,
+                        "stream_end_ns": 1121069106,
+                        "stream_duration_ns": 87840,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 126525,
+                            "stream_start_ns": 1120981266,
+                            "stream_end_ns": 1121069106,
+                            "stream_duration_ns": 87840,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1121238354,
+                        "stream_end_ns": 1121322994,
+                        "stream_duration_ns": 84640,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 126557,
+                            "stream_start_ns": 1121238354,
+                            "stream_end_ns": 1121322994,
+                            "stream_duration_ns": 84640,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "NvtxEvent",
+        "text": "autograd::engine::evaluate_function: _GroupedLinearBackward, op_id = 25438",
+        "stream_start_ns": 1122513138,
+        "stream_end_ns": 1124561778,
+        "stream_duration_ns": 2048640,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "_GroupedLinearBackward, seq = 23807, op_id = 25439, sizes = [[65920, 4096]], input_op_ids = [(25429,0)]",
+            "stream_start_ns": 1122513138,
+            "stream_end_ns": 1124561778,
+            "stream_duration_ns": 2048640,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "_GroupedLinear_backward",
+                "stream_start_ns": 1122513138,
+                "stream_end_ns": 1124561778,
+                "stream_duration_ns": 2048640,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1122513138,
+                    "stream_end_ns": 1123184370,
+                    "stream_duration_ns": 671232,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1122513138,
+                        "stream_end_ns": 1122658802,
+                        "stream_duration_ns": 145664,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 127179,
+                            "stream_start_ns": 1122513138,
+                            "stream_end_ns": 1122658802,
+                            "stream_duration_ns": 145664,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1123046514,
+                        "stream_end_ns": 1123184370,
+                        "stream_duration_ns": 137856,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqtst_256x128_128x5_2x2_2cta_h_bz_Avec32UE8M0_Bvec32UE8M0_NNT",
+                            "stream_id": "171",
+                            "correlation_id": 127211,
+                            "stream_start_ns": 1123046514,
+                            "stream_end_ns": 1123184370,
+                            "stream_duration_ns": 137856,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "NvtxEvent",
+                    "text": "nvte_multi_tensor_gemm",
+                    "stream_start_ns": 1123921010,
+                    "stream_end_ns": 1124561778,
+                    "stream_duration_ns": 640768,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1123921010,
+                        "stream_end_ns": 1124065842,
+                        "stream_duration_ns": 144832,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 127391,
+                            "stream_start_ns": 1123921010,
+                            "stream_end_ns": 1124065842,
+                            "stream_duration_ns": 144832,
+                            "is_memcpy": false
+                          }
+                        ]
+                      },
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nvte_cublas_gemm_v2",
+                        "stream_start_ns": 1124415730,
+                        "stream_end_ns": 1124561778,
+                        "stream_duration_ns": 146048,
+                        "stream_children": [
+                          {
+                            "type": "CudaEvent",
+                            "text": "cuLaunchKernelEx",
+                            "shortname": "nvjet_qqsss_128x256_128x6_2x1_2cta_v_badd_Avec32UE8M0_Bvec32UE8M0_NTT",
+                            "stream_id": "171",
+                            "correlation_id": 127423,
+                            "stream_start_ns": 1124415730,
+                            "stream_end_ns": 1124561778,
+                            "stream_duration_ns": 146048,
+                            "is_memcpy": false
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

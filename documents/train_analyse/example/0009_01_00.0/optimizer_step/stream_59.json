@@ -1,0 +1,132 @@
+[
+  {
+    "type": "NvtxEvent",
+    "text": "megatron.training.training.train_step.optimizer.step",
+    "stream_start_ns": 1228658836,
+    "stream_end_ns": 1275774228,
+    "stream_duration_ns": 47115392,
+    "stream_children": [
+      {
+        "type": "NvtxEvent",
+        "text": "megatron.core.optimizer.optimizer.step.step",
+        "stream_start_ns": 1228658836,
+        "stream_end_ns": 1275774228,
+        "stream_duration_ns": 47115392,
+        "stream_children": [
+          {
+            "type": "NvtxEvent",
+            "text": "megatron.core.optimizer.distrib_optimizer.step_with_ready_grads.param_sync",
+            "stream_start_ns": 1228658836,
+            "stream_end_ns": 1237922228,
+            "stream_duration_ns": 9263392,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "c10d::allgather_into_tensor_coalesced_, op_id = 27800, sizes = [[1860370432], [1854135296], [465092608], [463533824], [], []], input_op_ids = [(0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1)]",
+                "stream_start_ns": 1228658836,
+                "stream_end_ns": 1237922228,
+                "stream_duration_ns": 9263392,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "record_param_comms, op_id = 27801, sizes = [[465092608], [463533824], [], [], [], [], [], [], [], [], []], input_op_ids = [(0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1)]",
+                    "stream_start_ns": 1228658836,
+                    "stream_end_ns": 1237922228,
+                    "stream_duration_ns": 9263392,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nccl:all_gather_into_tensor_coalesced, op_id = 27802, sizes = [[465092608], [463533824]], input_op_ids = [(0,-1), (0,-1)]",
+                        "stream_start_ns": 1228658836,
+                        "stream_end_ns": 1237922228,
+                        "stream_duration_ns": 9263392,
+                        "stream_children": [
+                          {
+                            "type": "NvtxEvent",
+                            "text": "",
+                            "stream_start_ns": 1228658836,
+                            "stream_end_ns": 1237922228,
+                            "stream_duration_ns": 9263392,
+                            "stream_children": [
+                              {
+                                "type": "CudaEvent",
+                                "text": "cuLaunchKernelEx",
+                                "shortname": "ncclDevKernel_AllGather_RING_LL",
+                                "stream_id": "59",
+                                "correlation_id": 138173,
+                                "stream_start_ns": 1228658836,
+                                "stream_end_ns": 1237922228,
+                                "stream_duration_ns": 9263392,
+                                "is_memcpy": false
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "NvtxEvent",
+            "text": "megatron.core.optimizer.distrib_optimizer.step_with_ready_grads.param_sync",
+            "stream_start_ns": 1260051764,
+            "stream_end_ns": 1275774228,
+            "stream_duration_ns": 15722464,
+            "stream_children": [
+              {
+                "type": "NvtxEvent",
+                "text": "c10d::allgather_into_tensor_coalesced_, op_id = 29416, sizes = [[1860370432], [1854135296], [465092608], [463533824], [], []], input_op_ids = [(27979,0), (28111,0), (0,-1), (0,-1), (0,-1), (0,-1)]",
+                "stream_start_ns": 1260051764,
+                "stream_end_ns": 1275774228,
+                "stream_duration_ns": 15722464,
+                "stream_children": [
+                  {
+                    "type": "NvtxEvent",
+                    "text": "record_param_comms, op_id = 29417, sizes = [[465092608], [463533824], [], [], [], [], [], [], [], [], []], input_op_ids = [(0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1), (0,-1)]",
+                    "stream_start_ns": 1260051764,
+                    "stream_end_ns": 1275774228,
+                    "stream_duration_ns": 15722464,
+                    "stream_children": [
+                      {
+                        "type": "NvtxEvent",
+                        "text": "nccl:all_gather_into_tensor_coalesced, op_id = 29418, sizes = [[465092608], [463533824]], input_op_ids = [(0,-1), (0,-1)]",
+                        "stream_start_ns": 1260051764,
+                        "stream_end_ns": 1275774228,
+                        "stream_duration_ns": 15722464,
+                        "stream_children": [
+                          {
+                            "type": "NvtxEvent",
+                            "text": "",
+                            "stream_start_ns": 1260051764,
+                            "stream_end_ns": 1275774228,
+                            "stream_duration_ns": 15722464,
+                            "stream_children": [
+                              {
+                                "type": "CudaEvent",
+                                "text": "cuLaunchKernelEx",
+                                "shortname": "ncclDevKernel_AllGather_RING_LL",
+                                "stream_id": "59",
+                                "correlation_id": 144612,
+                                "stream_start_ns": 1260051764,
+                                "stream_end_ns": 1275774228,
+                                "stream_duration_ns": 15722464,
+                                "is_memcpy": false
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
