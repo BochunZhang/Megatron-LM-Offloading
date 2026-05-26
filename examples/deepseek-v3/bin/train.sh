@@ -429,6 +429,7 @@ LOAD_ARGS=(
 # Offloading
 OFFLOADING_ARGS=()
 if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
+    export NVTE_CPU_OFFLOAD_V1=1
     OFFLOADING_ARGS+=(
         --fine-grained-activation-offloading
     )
