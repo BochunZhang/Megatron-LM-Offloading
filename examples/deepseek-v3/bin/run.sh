@@ -109,13 +109,8 @@ feature_to_args() {
         local modules_str=""
         for i in $(seq 0 $((fine_modules_count - 1))); do
             local module=$(yq ".feature.fine_grained[$i]" "$file")
-            if [ -z "$modules_str" ]; then
-                modules_str="$module"
-            else
-                modules_str="$modules_str $module"
-            fi
+            args+=" --offload-fine-modules $module"
         done
-        args+=" --offload-fine-modules [$modules_str]"
     fi
 
     echo "$args"

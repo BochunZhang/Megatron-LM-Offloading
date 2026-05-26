@@ -443,7 +443,7 @@ if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
                 modules_str="$modules_str $module"
             fi
         done
-        OFFLOADING_ARGS+=(--offload-modules "[$modules_str]")
+        OFFLOADING_ARGS+=(--offload-modules "$modules_str")
     else
         # Default modules
         OFFLOADING_ARGS+=(--offload-modules "[attn_norm qkv_linear core_attn attn_proj mlp_norm expert_fc1 moe_act]")
