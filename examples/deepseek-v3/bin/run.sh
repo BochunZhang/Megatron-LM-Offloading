@@ -111,11 +111,21 @@ feature_to_args() {
     if [[ "$fine_grained_val" == "false" ]] || [[ "$fine_grained_val" == "null" ]]; then
         # Case 1: explicitly disabled, do nothing
         :
+    elif [[ "$fine_grained_val" == "all" ]]; then
+        # Case 2: empty list - enable flag but no modules
+        args+=" --offload-fine"
+        args+=" --offload-fine-modules attn_norm "
+        args+=" --offload-fine-modules qkv_linear"
+        args+=" --offload-fine-modules core_attn"
+        args+=" --offload-fine-modules attn_proj"
+        args+=" --offload-fine-modules mlp_norm"
+        args+=" --offload-fine-modules expert_fc1"
+        args+=" --offload-fine-modules  moe_act"
     else
         # Case 3: non-empty list - current logic
         local fine_modules_count=$(yq '.feature.fine_grained | length' "$file")
+        args+=" --offload-fine"
         if [ "$fine_modules_count" -gt 0 ]; then
-            args+=" --offload-fine"
             # Build modules string (space-separated, wrapped in brackets)
             local modules_str=""
             for i in $(seq 0 $((fine_modules_count - 1))); do

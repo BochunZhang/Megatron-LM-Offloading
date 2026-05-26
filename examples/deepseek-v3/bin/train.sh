@@ -375,15 +375,48 @@ OPTIMIZER_ARGS=(
     --exp-avg-sq-dtype bf16
 )
 
-FP8_RECIPE_ARGS=(
-    --fp8-recipe mxfp8
-    --fp8-format e4m3
-    --fp8-param-gather
-    --reuse-grad-buf-for-mxfp8-param-ag
-)
+# ========== FP8 Configuration based on GPU Architecture ==========
+# Get compute capability from nvidia-smi
+get_compute_capability_major() {
+    local major=$(nvidia-smi --query-gpu=compute_cap --format=csv -i 0 2>/dev/null | tail -1 | cut -d'.' -f1)
+    echo "$major"
+}
+
+COMPUTE_CAP_MAJOR=$(get_compute_capability_major)
+echo "Detected GPU compute capability major version: $COMPUTE_CAP_MAJOR"
+
+if [ -n "$COMPUTE_CAP_MAJOR" ] && [ "$COMPUTE_CAP_MAJOR" -ge 10 ]; then
+    # Blackwell architecture (B100/B200) - sm_100+
+    echo "Using Blackwell-optimized FP8 config (mxfp8)"
+    FP8_RECIPE_ARGS=(
+        --fp8-recipe mxfp8
+        --fp8-format e4m3
+        --fp8-param-gather
+        --reuse-grad-buf-for-mxfp8-param-ag
+    )
+elif [ -n "$COMPUTE_CAP_MAJOR" ] && [ "$COMPUTE_CAP_MAJOR" -ge 9 ]; then
+    # Hopper architecture (H100/H200) - sm_90
+    echo "Using Hopper-optimized FP8 config (blockwise)"
+    FP8_RECIPE_ARGS=(
+        --fp8-format e4m3
+        --fp8-recipe blockwise
+        --fp8-param-gather
+        --moe-router-padding-for-fp8
+    )
+else
+    # Default fallback (e.g., Ampere or unknown)
+    echo "WARNING: GPU architecture does not support native FP8 or detection failed."
+    echo "Defaulting to Blackwell config."
+    FP8_RECIPE_ARGS=(
+        --fp8-recipe mxfp8
+        --fp8-format e4m3
+        --fp8-param-gather
+        --reuse-grad-buf-for-mxfp8-param-ag
+    )
+fi
 
 # Disable recompute when CPU offloading is enabled
-if [ "$CPU_OFFLOADING" = true ]; then
+if [ "$CPU_OFFLOADING" = true || "$OFFLOAD_FINE_GRAINED" = true ]; then
     RECOMPUTE_ARGS=()
 else
     RECOMPUTE_ARGS=(
@@ -445,9 +478,9 @@ if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
             fi
         done
         OFFLOADING_ARGS+=(--offload-modules "$modules_str")
-    else
-        # Default modules when not specified
-        OFFLOADING_ARGS+=(--offload-modules "attn_norm qkv_linear core_attn attn_proj mlp_norm expert_fc1 moe_act")
+    # else
+    #     # Default modules when not specified
+    #     OFFLOADING_ARGS+=(--offload-modules "attn_norm qkv_linear core_attn attn_proj mlp_norm expert_fc1 moe_act")
     fi
 fi
 
