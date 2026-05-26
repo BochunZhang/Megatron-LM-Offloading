@@ -686,12 +686,14 @@ def forward_backward_no_pipelining(
     if config.finalize_model_grads_func is not None and not forward_only:
         # Finalize model grads (perform full grad all-reduce / reduce-scatter for
         # data parallelism and layernorm all-reduce for sequence parallelism).
+        nvtx_range_push(suffix="finalize_model_grads")
         config.finalize_model_grads_func(
             [model],
             total_num_tokens if config.calculate_per_token_loss else None,
             pg_collection=pg_collection,
             force_all_reduce=force_all_reduce,
         )
+        nvtx_range_pop(suffix="finalize_model_grads")
 
     if not forward_only and config.fine_grained_activation_offloading:
         off_interface.reset()

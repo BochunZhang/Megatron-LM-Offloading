@@ -3018,6 +3018,7 @@ def train(
         )
 
         # Checkpoint and decide whether to exit.
+        nvtx_range_push(suffix='checkpoint_and_decide_exit')
         should_exit = checkpoint_and_decide_exit(
             model,
             optimizer,
@@ -3027,6 +3028,7 @@ def train(
             checkpointing_context,
             train_data_iterator,
         )
+        nvtx_range_pop(suffix='checkpoint_and_decide_exit')
         if should_exit:
             break
 
