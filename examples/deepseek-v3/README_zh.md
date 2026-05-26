@@ -115,11 +115,19 @@ feature:
 | offload: [act] | --offload-act | 激活值卸载到 CPU |
 | offload: [weight] | --offload-weight | 权重卸载到 CPU |
 | offload: [optim] | --offload-optim | 优化器状态卸载到 CPU |
-| fine_grained: [模块列表] | --offload-fine --offload-fine-modules 模块名 ... | 细粒度卸载指定模块 |
+| fine_grained: false | (无参数) | 完全禁用细粒度卸载 |
+| fine_grained: [] | --offload-fine --offload-fine-modules [] | 禁用但保持其他参数一致（用于对比测试） |
+| fine_grained: [模块列表] | --offload-fine --offload-fine-modules [模块名 ...] | 细粒度卸载指定模块 |
 
 **可用的细粒度卸载模块：** `attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
-使用 `fine_grained` 但不指定模块时，将使用默认模块：`attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
+**`fine_grained` 的三种模式：**
+1. **`false`** - 完全禁用细粒度卸载
+2. **`[]`**（空列表）- 禁用细粒度卸载，但保持其他参数与启用时一致（用于 A/B 对比测试）
+3. **`[module1, ...]`** - 启用并指定卸载模块（省略时使用默认模块）
+
+使用 `fine_grained` 但不指定模块时（例如在命令行仅用 `--offload-fine`），将使用默认模块：
+`attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
 ## 矩阵参数展开（Matrix Expansion）
 

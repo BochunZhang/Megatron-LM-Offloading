@@ -112,11 +112,18 @@ feature:
 | offload: [act] | --offload-act |
 | offload: [weight] | --offload-weight |
 | offload: [optim] | --offload-optim |
-| fine_grained: [module1, ...] | --offload-fine --offload-fine-modules module1 ... |
+| fine_grained: false | (disabled) |
+| fine_grained: [] | --offload-fine --offload-fine-modules [] |
+| fine_grained: [module1, ...] | --offload-fine --offload-fine-modules [module1 ...] |
 
 **Available fine-grained offload modules:** `attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
-When using `fine_grained` without specifying modules, default modules will be used:
+**Three modes for `fine_grained`:**
+1. **`false`** - Completely disable fine-grained offload
+2. **`[]`** (empty list) - Disable fine-grained offload but keep other parameters consistent with enabled state (for A/B comparison)
+3. **`[module1, ...]`** - Enable with specified modules (uses default modules if omitted)
+
+When using `fine_grained` without specifying modules (e.g., just `--offload-fine` on command line), default modules will be used:
 `attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
 ## Matrix Expansion

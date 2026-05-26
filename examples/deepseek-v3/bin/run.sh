@@ -102,15 +102,27 @@ feature_to_args() {
     fi
 
     # Check fine-grained offload modules
-    local fine_modules_count=$(yq '.feature.fine_grained | length' "$file")
-    if [ "$fine_modules_count" -gt 0 ]; then
-        args+=" --offload-fine"
-        # Build modules string (space-separated, wrapped in brackets)
-        local modules_str=""
-        for i in $(seq 0 $((fine_modules_count - 1))); do
-            local module=$(yq ".feature.fine_grained[$i]" "$file")
-            args+=" --offload-fine-modules $module"
-        done
+    # Handle three cases:
+    # 1. false/null - disable fine-grained offload (no args)
+    # 2. [] (empty list) - disable but keep other params consistent (--offload-fine with empty modules)
+    # 3. non-empty list - enable with specified modules
+    local fine_grained_val=$(yq '.feature.fine_grained' "$file")
+
+    if [[ "$fine_grained_val" == "false" ]] || [[ "$fine_grained_val" == "null" ]]; then
+        # Case 1: explicitly disabled, do nothing
+        :
+    else
+        # Case 3: non-empty list - current logic
+        local fine_modules_count=$(yq '.feature.fine_grained | length' "$file")
+        if [ "$fine_modules_count" -gt 0 ]; then
+            args+=" --offload-fine"
+            # Build modules string (space-separated, wrapped in brackets)
+            local modules_str=""
+            for i in $(seq 0 $((fine_modules_count - 1))); do
+                local module=$(yq ".feature.fine_grained[$i]" "$file")
+                args+=" --offload-fine-modules $module"
+            done
+        fi
     fi
 
     echo "$args"
