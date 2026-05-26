@@ -28,7 +28,7 @@ if ! command -v yq &> /dev/null; then
         exit 1
     fi
 
-    curl -L "https://github.com/mikefarah/yq/releases/download/v4.53.2/${YQ_BINARY}" -o yq && \
+    curl -L -k "https://github.com/mikefarah/yq/releases/download/v4.53.2/${YQ_BINARY}" -o yq && \
     chmod +x yq && \
     sudo mv yq /usr/local/bin/ && \
     echo "yq version: $(yq --version)"
@@ -97,9 +97,25 @@ feature_to_args() {
                 act) args+=" --offload-act" ;;
                 weight|wt) args+=" --offload-weight" ;;
                 optim|opt) args+=" --offload-optim" ;;
-                fine) args+=" --offload-fine" ;;
             esac
         done
+    fi
+
+    # Check fine-grained offload modules
+    local fine_modules_count=$(yq '.feature.fine_grained | length' "$file")
+    if [ "$fine_modules_count" -gt 0 ]; then
+        args+=" --offload-fine"
+        # Build modules string (space-separated, wrapped in brackets)
+        local modules_str=""
+        for i in $(seq 0 $((fine_modules_count - 1))); do
+            local module=$(yq ".feature.fine_grained[$i]" "$file")
+            if [ -z "$modules_str" ]; then
+                modules_str="$module"
+            else
+                modules_str="$modules_str $module"
+            fi
+        done
+        args+=" --offload-fine-modules [$modules_str]"
     fi
 
     echo "$args"

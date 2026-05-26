@@ -60,16 +60,17 @@ OFFLOAD_ACTIVATION=false
 OFFLOAD_WEIGHTS=false
 OFFLOAD_OPTIMIZER=false
 OFFLOAD_FINE_GRAINED=false
+OFFLOAD_FINE_MODULES=()
 OPTIMIZER_OFFLOAD_FRACTION=1.0
 CPU_OFFLOADING=false
 CPU_OFFLOADING_DOUBLE_BUFFERING=false
 
 # ========== 3. Parameter Parsing ==========
 # Base params: --tensor-parallel, --pipeline-parallel, --expert-parallel, etc.
-# Advanced features: --profile, --graph, --offload-act, --offload-weight, --offload-optim, --offload-fine
+# Advanced features: --profile, --graph, --offload-act, --offload-weight, --offload-optim, --offload-fine, --offload-fine-modules
 
 params=$(getopt -o "" --long \
-  "tensor-parallel:,pipeline-parallel:,expert-parallel:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pipeline-parallel-layout:,dispatcher:,train-iters:,profile,graph,offload-act,offload-weight,offload-optim,offload-fine,optimizer-offload-fraction:" \
+  "tensor-parallel:,pipeline-parallel:,expert-parallel:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pipeline-parallel-layout:,dispatcher:,train-iters:,profile,graph,offload-act,offload-weight,offload-optim,offload-fine,offload-fine-modules:,optimizer-offload-fraction:" \
   -- "$@")
 eval set -- "$params"
 
@@ -93,6 +94,7 @@ while true; do
         --offload-weight) OFFLOAD_WEIGHTS=true; CPU_OFFLOADING=true; CPU_OFFLOADING_DOUBLE_BUFFERING=true; shift ;;
         --offload-optim) OFFLOAD_OPTIMIZER=true; shift ;;
         --offload-fine) OFFLOAD_FINE_GRAINED=true; shift ;;
+        --offload-fine-modules) OFFLOAD_FINE_MODULES+=("$2"); shift 2 ;;
         --optimizer-offload-fraction) OPTIMIZER_OFFLOAD_FRACTION="$2"; shift 2 ;;
         --) shift; break ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
@@ -429,8 +431,23 @@ OFFLOADING_ARGS=()
 if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
     OFFLOADING_ARGS+=(
         --fine-grained-activation-offloading
-        --offload-modules "attn_norm" "qkv_linear" "core_attn" "attn_proj" "mlp_norm" "expert_fc1" "moe_act" 
     )
+    # Build offload-modules argument - join modules into a single string with space separator
+    if [ ${#OFFLOAD_FINE_MODULES[@]} -gt 0 ]; then
+        # User-specified modules - join with space and wrap in brackets
+        modules_str=""
+        for module in "${OFFLOAD_FINE_MODULES[@]}"; do
+            if [ -z "$modules_str" ]; then
+                modules_str="$module"
+            else
+                modules_str="$modules_str $module"
+            fi
+        done
+        OFFLOADING_ARGS+=(--offload-modules "[$modules_str]")
+    else
+        # Default modules
+        OFFLOADING_ARGS+=(--offload-modules "[attn_norm qkv_linear core_attn attn_proj mlp_norm expert_fc1 moe_act]")
+    fi
 fi
 
 if [ "$CPU_OFFLOADING" = true ]; then

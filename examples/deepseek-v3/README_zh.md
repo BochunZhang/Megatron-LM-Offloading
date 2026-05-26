@@ -20,7 +20,7 @@ examples/deepseek-v3/
 
 ### train.sh - 训练执行引擎（第一层）
 - 接收展开后的完整参数名（如 `--pipeline-parallel`、`--tensor-parallel` 等）
-- 支持高级特性参数：`--profile`、`--graph`、`--offload-act`、`--offload-weight`、`--offload-optim`、`--offload-fine`
+- 支持高级特性参数：`--profile`、`--graph`、`--offload-act`、`--offload-weight`、`--offload-optim`、`--offload-fine`、`--offload-fine-modules`
 - 不包含任何测试用例逻辑，仅负责执行训练任务
 - 可直接被高级用户调用，用于单次训练
 
@@ -85,7 +85,8 @@ matrix:
 feature:
   profile: false                 # 是否启用性能分析
   graph: false                   # 是否启用 CUDA Graph
-  offload: []                    # 卸载选项：[act, weight, optim, fine]
+  offload: []                    # 卸载选项：[act, weight, optim]
+  fine_grained: []               # 细粒度卸载模块，如 [attn_norm, core_attn, ...]
 ```
 
 ### 参数映射表
@@ -114,7 +115,11 @@ feature:
 | offload: [act] | --offload-act | 激活值卸载到 CPU |
 | offload: [weight] | --offload-weight | 权重卸载到 CPU |
 | offload: [optim] | --offload-optim | 优化器状态卸载到 CPU |
-| offload: [fine] | --offload-fine | 细粒度卸载 |
+| fine_grained: [模块列表] | --offload-fine --offload-fine-modules 模块名 ... | 细粒度卸载指定模块 |
+
+**可用的细粒度卸载模块：** `attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
+
+使用 `fine_grained` 但不指定模块时，将使用默认模块：`attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
 ## 矩阵参数展开（Matrix Expansion）
 
@@ -175,6 +180,7 @@ feature:
   profile: false
   graph: true
   offload: [act]
+  fine_grained: [attn_norm, moe_act]
 ```
 
 ## 脚本关系图

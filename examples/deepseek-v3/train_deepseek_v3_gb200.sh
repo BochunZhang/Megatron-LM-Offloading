@@ -136,7 +136,8 @@ OFFLOAD_WEIGHTS=false
 OPTIMIZER_OFFLOAD_FRACTION=1.0
 
 # args
-params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,fine-grained-offload,activation-offload,weights-offload,optimizer-offload,optimizer-offload-fraction" -- "$@")
+COMPARE_FINE_GRAINED_OFFLOAD=false
+params=$(getopt -o "" --long "pp:,tp:,ep:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pp-layout:,dispatcher:,enable-cuda-graph,fine-grained-offload,activation-offload,weights-offload,optimizer-offload,optimizer-offload-fraction,compare-fine-grained-offload" -- "$@")
 eval set -- "$params"
 
 while true; do
@@ -192,6 +193,10 @@ while true; do
             ;;
         --fine-grained-offload)
             FINE_GRAINED_OFFLOAD=true
+            shift 1
+            ;;
+        --compare-fine-grained-offload)
+            COMPARE_FINE_GRAINED_OFFLOAD=true
             shift 1
             ;;
         --activation-offload)
@@ -523,6 +528,10 @@ LOAD_ARGS=(
 )
 
 OFFLOADING_ARGS=()
+
+# Store original FINE_GRAINED_OFFLOAD value for comparison mode
+ORIGINAL_FINE_GRAINED_OFFLOAD=$FINE_GRAINED_OFFLOAD
+
 if [ $FINE_GRAINED_OFFLOAD = true ]; then
     OFFLOADING_ARGS+=(
         --fine-grained-activation-offloading
@@ -532,7 +541,7 @@ fi
 
 if [ $CPU_OFFLOADING = true ]; then
     OFFLOADING_ARGS+=(
-        --cpu-offloading 
+        --cpu-offloading
         --cpu-offloading-num-layers $NUM_LAYER
     )
     if [ $OFFLOAD_ACTIVATION = false ]; then
@@ -561,60 +570,211 @@ if [ $OPTIMIZER_OFFLOAD = true ]; then
     )
 fi
 
+# Function to run training with current settings
+run_training() {
+    local run_label="$1"
+    local current_timestamp=$(date +%Y-%m-%d-%H-%M-%S)
+    local current_model="${MODEL}-$run_label"
+    local current_logs_path=""
 
-
-
-if [ $RANK -eq 0 ]; then
-    # Set `NVTE_NVTX_ENABLED=1` in the environment to enable NVTX range profiling in transformer_engine.
-    export NVTE_NVTX_ENABLED=1
-    
-    PROFILE_ARGS=(
-        --profile 
-        --profile-ranks 0 1 2 3 
-        --profile-step-start 16 
-        --profile-step-start 18 
-    )
-
-
-    NSYS_ARGS=(
-        nsys profile -s none -t nvtx,cuda,cudnn,cublas
-        --cudabacktrace=all 
-        --cuda-graph-trace=node 
-        --python-backtrace=cuda 
-        --wait all 
-        -o $LOGS_PATH/$MODEL-$TIMESTEMP.nsys-rep
-        --force-overwrite true 
-        --capture-range=cudaProfilerApi 
-        --capture-range-end=stop 
-    )
-fi
-
-numarun \
-${NSYS_ARGS[@]} \
-torchrun \
-${DISTRIBUTED_ARGS[@]} \
-./pretrain_gpt.py \
-${MODEL_PARALLEL_ARGS[@]} \
-${GPT_MODEL_ARGS[@]} \
-${TRAINING_ARGS[@]} \
-${LOAD_ARGS[@]} \
-${LOGGING_ARGS[@]} \
-${DATA_ARGS[@]} \
-${RECOMPUTE_ARGS[@]} \
-${FP8_RECIPE_ARGS[@]} \
-${OPTIMIZER_ARGS[@]} \
-${MOE_ARGS[@]} \
-${OFFLOADING_ARGS[@]} \
-${PROFILE_ARGS[@]} \
-> $LOGS_PATH/train.log 2>&1
-
-
-if [ $RANK -eq 0 ]; then
     if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
-        sleep 60
+        current_logs_path=$WORKSPACE_PATH/logs-temp/$current_model/rank$RANK
+    else
+        current_logs_path=$WORKSPACE_PATH/logs-temp/$current_model
     fi
-    # TARGET_PATH=$WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
-    # mkdir -p $TARGET_PATH
 
-    mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
+    local current_tensorboard_path=$current_logs_path/tensorboard
+    local current_checkpoints_path=$current_logs_path/checkpoints
+
+    # Update paths in LOGGING_ARGS and LOAD_ARGS
+    local CURRENT_LOGGING_ARGS=(
+        --log-timers-to-tensorboard
+        --log-memory-to-tensorboard
+        --log-validation-ppl-to-tensorboard
+        --log-throughput
+        --log-interval 1
+        --logging-level 40
+        --tensorboard-dir $current_tensorboard_path
+        --record-memory-history
+        --memory-snapshot-path $WORKSPACE_PATH/logs-temp/$current_model
+    )
+
+    local CURRENT_LOAD_ARGS=(
+        --no-load-optim
+        --no-load-rng
+        --auto-detect-ckpt-format
+        --load None
+        --save $current_checkpoints_path
+        --save-interval 500
+        --dist-ckpt-strictness log_all
+    )
+
+    mkdir -p $current_logs_path
+    mkdir -p $current_tensorboard_path
+    mkdir -p $current_checkpoints_path
+
+    echo "========================================"
+    echo "Running: $run_label"
+    echo "Fine-grained offload: $FINE_GRAINED_OFFLOAD"
+    echo "Log path: $current_logs_path"
+    echo "========================================"
+
+    local CURRENT_PROFILE_ARGS=()
+    local CURRENT_NSYS_ARGS=()
+
+    if [ $RANK -eq 0 ]; then
+        export NVTE_NVTX_ENABLED=1
+
+        CURRENT_PROFILE_ARGS=(
+            --profile
+            --profile-ranks 0 1 2 3
+            --profile-step-start 16
+            --profile-step-start 18
+        )
+
+        CURRENT_NSYS_ARGS=(
+            nsys profile -s none -t nvtx,cuda,cudnn,cublas
+            --cudabacktrace=all
+            --cuda-graph-trace=node
+            --python-backtrace=cuda
+            --wait all
+            -o $current_logs_path/$current_model-$current_timestamp.nsys-rep
+            --force-overwrite true
+            --capture-range=cudaProfilerApi
+            --capture-range-end=stop
+        )
+    fi
+
+    numarun \
+    ${CURRENT_NSYS_ARGS[@]} \
+    torchrun \
+    ${DISTRIBUTED_ARGS[@]} \
+    ./pretrain_gpt.py \
+    ${MODEL_PARALLEL_ARGS[@]} \
+    ${GPT_MODEL_ARGS[@]} \
+    ${TRAINING_ARGS[@]} \
+    ${CURRENT_LOAD_ARGS[@]} \
+    ${CURRENT_LOGGING_ARGS[@]} \
+    ${DATA_ARGS[@]} \
+    ${RECOMPUTE_ARGS[@]} \
+    ${FP8_RECIPE_ARGS[@]} \
+    ${OPTIMIZER_ARGS[@]} \
+    ${MOE_ARGS[@]} \
+    ${OFFLOADING_ARGS[@]} \
+    ${CURRENT_PROFILE_ARGS[@]} \
+    > $current_logs_path/train.log 2>&1
+
+    local exit_code=$?
+
+    if [ $RANK -eq 0 ]; then
+        if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
+            sleep 60
+        fi
+        mv $WORKSPACE_PATH/logs-temp/$current_model $WORKSPACE_PATH/logs/$current_model-$current_timestamp 2>/dev/null || true
+        echo "Results saved to: $WORKSPACE_PATH/logs/$current_model-$current_timestamp"
+    fi
+
+    return $exit_code
+}
+
+# Main execution logic
+if [ $COMPARE_FINE_GRAINED_OFFLOAD = true ]; then
+    echo "========================================"
+    echo "Running in comparison mode"
+    echo "========================================"
+
+    # Run 1: With fine-grained offloading
+    echo ""
+    echo "=== Run 1: WITH fine-grained offloading ==="
+    FINE_GRAINED_OFFLOAD=true
+    OFFLOADING_ARGS=()
+    OFFLOADING_ARGS+=(
+        --fine-grained-activation-offloading
+        --offload-modules "attn_norm" "core_attn" "attn_proj" "mlp_norm" "expert_fc1" "moe_act"
+    )
+    run_training "with-offload"
+    WITH_OFFLOAD_EXIT=$?
+
+    # Run 2: Without fine-grained offloading
+    echo ""
+    echo "=== Run 2: WITHOUT fine-grained offloading ==="
+    FINE_GRAINED_OFFLOAD=false
+    OFFLOADING_ARGS=()
+    run_training "without-offload"
+    WITHOUT_OFFLOAD_EXIT=$?
+
+    echo ""
+    echo "========================================"
+    echo "Comparison complete!"
+    echo "========================================"
+    echo "Results:"
+    echo "  With offloading: exit code $WITH_OFFLOAD_EXIT"
+    echo "  Without offloading: exit code $WITHOUT_OFFLOAD_EXIT"
+    echo ""
+    echo "Compare results in: $WORKSPACE_PATH/logs/"
+    echo "  - $MODEL-with-offload-*"
+    echo "  - $MODEL-without-offload-*"
+    echo ""
+    echo "To analyze with nsys_profile_analyzer.py:"
+    echo "  python tests/train_analyse/nsys_profile_analyzer.py \\"
+    echo "    --sqlite logs/<run>/profile.sqlite \\"
+    echo "    --json logs/<run>/profile.json \\"
+    echo "    --output analysis_results/"
+
+else
+    # Normal single run
+    if [ $RANK -eq 0 ]; then
+        # Set `NVTE_NVTX_ENABLED=1` in the environment to enable NVTX range profiling in transformer_engine.
+        export NVTE_NVTX_ENABLED=1
+
+        PROFILE_ARGS=(
+            --profile
+            --profile-ranks 0 1 2 3
+            --profile-step-start 16
+            --profile-step-start 18
+        )
+
+
+        NSYS_ARGS=(
+            nsys profile -s none -t nvtx,cuda,cudnn,cublas
+            --cudabacktrace=all
+            --cuda-graph-trace=node
+            --python-backtrace=cuda
+            --wait all
+            -o $LOGS_PATH/$MODEL-$TIMESTEMP.nsys-rep
+            --force-overwrite true
+            --capture-range=cudaProfilerApi
+            --capture-range-end=stop
+        )
+    fi
+
+    numarun \
+    ${NSYS_ARGS[@]} \
+    torchrun \
+    ${DISTRIBUTED_ARGS[@]} \
+    ./pretrain_gpt.py \
+    ${MODEL_PARALLEL_ARGS[@]} \
+    ${GPT_MODEL_ARGS[@]} \
+    ${TRAINING_ARGS[@]} \
+    ${LOAD_ARGS[@]} \
+    ${LOGGING_ARGS[@]} \
+    ${DATA_ARGS[@]} \
+    ${RECOMPUTE_ARGS[@]} \
+    ${FP8_RECIPE_ARGS[@]} \
+    ${OPTIMIZER_ARGS[@]} \
+    ${MOE_ARGS[@]} \
+    ${OFFLOADING_ARGS[@]} \
+    ${PROFILE_ARGS[@]} \
+    > $LOGS_PATH/train.log 2>&1
+
+
+    if [ $RANK -eq 0 ]; then
+        if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
+            sleep 60
+        fi
+        # TARGET_PATH=$WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
+        # mkdir -p $TARGET_PATH
+
+        mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP
+    fi
 fi

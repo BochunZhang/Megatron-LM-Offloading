@@ -18,7 +18,7 @@ examples/deepseek-v3/
 
 - **train.sh**: Low-level training execution script
   - Receives expanded parameter names (--pipeline-parallel, --tensor-parallel, etc.)
-  - Supports advanced features: --profile, --graph, --offload-act, --offload-weight, --offload-optim, --offload-fine
+  - Supports advanced features: --profile, --graph, --offload-act, --offload-weight, --offload-optim, --offload-fine, --offload-fine-modules
   - No testcase logic, only executes training
 
 - **run.sh**: Testcase orchestration script
@@ -82,7 +82,8 @@ matrix:
 feature:
   profile: false                 # enable profiling
   graph: false                   # enable CUDA graph
-  offload: []                    # options: [act, weight, optim, fine]
+  offload: []                    # options: [act, weight, optim]
+  fine_grained: []               # fine-grained offload modules, e.g. [attn_norm, core_attn, ...]
 ```
 
 ### Parameter Mapping
@@ -111,7 +112,12 @@ feature:
 | offload: [act] | --offload-act |
 | offload: [weight] | --offload-weight |
 | offload: [optim] | --offload-optim |
-| offload: [fine] | --offload-fine |
+| fine_grained: [module1, ...] | --offload-fine --offload-fine-modules module1 ... |
+
+**Available fine-grained offload modules:** `attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
+
+When using `fine_grained` without specifying modules, default modules will be used:
+`attn_norm`, `qkv_linear`, `core_attn`, `attn_proj`, `mlp_norm`, `expert_fc1`, `moe_act`
 
 ## Matrix Expansion
 
