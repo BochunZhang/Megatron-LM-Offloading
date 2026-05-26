@@ -462,12 +462,12 @@ LOAD_ARGS=(
 # Offloading
 OFFLOADING_ARGS=()
 if [ "$OFFLOAD_FINE_GRAINED" = true ]; then
-    export NVTE_CPU_OFFLOAD_V1=1
-    OFFLOADING_ARGS+=(
-        --fine-grained-activation-offloading
-    )
     # Build offload-modules argument - join modules into a single string with space separator
     if [ ${#OFFLOAD_FINE_MODULES[@]} -gt 0 ]; then
+        export NVTE_CPU_OFFLOAD_V1=1
+        OFFLOADING_ARGS+=(
+            --fine-grained-activation-offloading
+        )
         # User-specified modules - join with space and wrap in brackets
         modules_str=""
         for module in "${OFFLOAD_FINE_MODULES[@]}"; do
