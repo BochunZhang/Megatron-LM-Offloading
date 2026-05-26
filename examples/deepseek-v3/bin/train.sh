@@ -394,8 +394,8 @@ if [ -n "$COMPUTE_CAP_MAJOR" ] && [ "$COMPUTE_CAP_MAJOR" -ge 10 ]; then
         --fp8-param-gather
         --reuse-grad-buf-for-mxfp8-param-ag
     )
-elif [ -n "$COMPUTE_CAP_MAJOR" ] && [ "$COMPUTE_CAP_MAJOR" -ge 9 ]; then
-    # Hopper architecture (H100/H200) - sm_90
+elif [ -n "$COMPUTE_CAP_MAJOR" ] && { [ "$COMPUTE_CAP_MAJOR" -ge 9 ] || [ "$COMPUTE_CAP_MAJOR" -eq 8 ]; }; then
+    # Hopper (sm_90) or Ampere 8.9 (RTX 4090) - use blockwise recipe
     echo "Using Hopper-optimized FP8 config (blockwise)"
     FP8_RECIPE_ARGS=(
         --fp8-format e4m3
@@ -416,7 +416,7 @@ else
 fi
 
 # Disable recompute when CPU offloading is enabled
-if [ "$CPU_OFFLOADING" = true || "$OFFLOAD_FINE_GRAINED" = true ]; then
+if [[ "$CPU_OFFLOADING" = true || "$OFFLOAD_FINE_GRAINED" = true ]]; then
     RECOMPUTE_ARGS=()
 else
     RECOMPUTE_ARGS=(
