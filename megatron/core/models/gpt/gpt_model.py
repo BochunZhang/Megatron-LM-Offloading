@@ -265,6 +265,106 @@ class GPTModel(LanguageModule):
                 quant_config = get_quant_config_or_none(name, self.config.quant_recipe)
                 module.finish_init(quant_config)
 
+        # Set nvtx_tag for key modules to enable NVTX profiling
+        self._set_nvtx_tags_for_modules()
+
+    def _set_nvtx_tags_for_modules(self):
+        """Set nvtx_tag attribute for key modules to enable NVTX profiling.
+
+        This method assigns descriptive tags to key submodules (embedding, decoder,
+        transformer layers, attention, mlp, etc.) for NVTX profiling purposes.
+        The tags follow the pattern: "gpt.{module_path}" (e.g., "gpt.decoder.layers.0.self_attention")
+        """
+        # Set tags for top-level modules
+        if hasattr(self, 'embedding') and self.embedding is not None:
+            self.embedding.nvtx_tag = "gpt.embedding"
+
+        if hasattr(self, 'decoder') and self.decoder is not None:
+            self.decoder.nvtx_tag = "gpt.decoder"
+
+            # Set tags for transformer layers
+            if hasattr(self.decoder, 'layers'):
+                for layer_idx, layer in enumerate(self.decoder.layers):
+                    layer.nvtx_tag = f"gpt.decoder.layers.{layer_idx}"
+
+                    # Set tags for layer submodules
+                    if hasattr(layer, 'input_layernorm') and layer.input_layernorm is not None:
+                        layer.input_layernorm.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.input_layernorm"
+
+                    if hasattr(layer, 'self_attention') and layer.self_attention is not None:
+                        layer.self_attention.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.self_attention"
+
+                        # Set tags for attention submodules (qkv, proj)
+                        if hasattr(layer.self_attention, 'linear_qkv'):
+                            layer.self_attention.linear_qkv.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.self_attention.linear_qkv"
+                        if hasattr(layer.self_attention, 'linear_proj'):
+                            layer.self_attention.linear_proj.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.self_attention.linear_proj"
+
+                    if hasattr(layer, 'pre_mlp_layernorm') and layer.pre_mlp_layernorm is not None:
+                        layer.pre_mlp_layernorm.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.pre_mlp_layernorm"
+
+                    if hasattr(layer, 'mlp') and layer.mlp is not None:
+                        layer.mlp.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.mlp"
+
+                        # Set tags for MLP submodules (fc1, fc2)
+                        if hasattr(layer.mlp, 'linear_fc1'):
+                            layer.mlp.linear_fc1.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.mlp.linear_fc1"
+                        if hasattr(layer.mlp, 'linear_fc2'):
+                            layer.mlp.linear_fc2.nvtx_tag = f"gpt.decoder.layers.{layer_idx}.mlp.linear_fc2"
+
+        if hasattr(self, 'mtp') and self.mtp is not None:
+            self.mtp.nvtx_tag = "gpt.mtp"
+
+        if hasattr(self, 'output_layer') and self.output_layer is not None:
+            self.output_layer.nvtx_tag = "gpt.output_layer"
+
+    def enable_nvtx_profiling(self, enabled: bool = True):
+        """Enable NVTX profiling for the model.
+
+        This method registers NVTX markers on all modules that have nvtx_tag set.
+        The profiling covers forward and backward passes with proper hook ordering.
+
+        Args:
+            enabled: Whether to enable profiling. If False, removes existing hooks.
+
+        Returns:
+            NVTXModuleProfiler instance if enabled, None otherwise.
+        """
+        from megatron.core.utils.nvtx_profiler import NVTXModuleProfiler
+
+        if not hasattr(self, '_nvtx_profiler'):
+            self._nvtx_profiler = None
+
+        # Remove existing hooks if any
+        if self._nvtx_profiler is not None:
+            self._nvtx_profiler.remove_hooks()
+            self._nvtx_profiler = None
+
+        if not enabled:
+            return None
+
+        # Create new profiler and register modules with nvtx_tag
+        profiler = NVTXModuleProfiler(enabled=True)
+
+        for name, module in self.named_modules():
+            if hasattr(module, 'nvtx_tag') and module.nvtx_tag is not None:
+                # Use the predefined nvtx_tag
+                profiler.register_module(
+                    module,
+                    nvtx_tag=module.nvtx_tag,
+                    enable_forward=True,
+                    enable_backward=True,
+                )
+
+        self._nvtx_profiler = profiler
+        return profiler
+
+    def disable_nvtx_profiling(self):
+        """Disable NVTX profiling and remove all hooks."""
+        if hasattr(self, '_nvtx_profiler') and self._nvtx_profiler is not None:
+            self._nvtx_profiler.remove_hooks()
+            self._nvtx_profiler = None
+
     def set_input_tensor(self, input_tensor: Tensor) -> None:
         """Sets input tensor to the model.
 
