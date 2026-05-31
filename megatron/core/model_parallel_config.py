@@ -390,6 +390,12 @@ class ModelParallelConfig:
     """If True, enables double buffering across layers while reloading activations from CPU."""
 
     ###################
+    # Profiling
+    ###################
+    enable_nvtx_profiling: bool = False
+    """If True, enables NVTX profiling for forward and backward passes."""
+
+    ###################
     # Timing
     ###################
     barrier_with_L1_time: bool = field(
