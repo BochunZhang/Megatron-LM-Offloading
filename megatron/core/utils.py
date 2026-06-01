@@ -2595,7 +2595,7 @@ class NVTXModuleProfiler:
 
         def post_forward_hook(mod, input, output):
             """Post-forward: pop NVTX range (executes last)."""
-            nvtx_range_pop()
+            nvtx_range_pop(f"{name}.forward")
             return None
 
         handle_pre = module.register_forward_pre_hook(pre_forward_hook, prepend=True)
@@ -2614,7 +2614,7 @@ class NVTXModuleProfiler:
 
         def post_backward_hook(mod, grad_input, grad_output):
             """Post-backward: pop NVTX range (executes last)."""
-            nvtx_range_pop()
+            nvtx_range_pop(f"{name}.backward")
             return None
 
         handle_pre = module.register_full_backward_pre_hook(pre_backward_hook, prepend=True)
