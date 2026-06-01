@@ -2569,7 +2569,7 @@ class NVTXModuleProfiler:
     def register_module(
         self,
         module,
-        nvtx_tag: Optional[str] = None,
+        name: str,
         enable_forward: bool = True,
         enable_backward: bool = True,
     ) -> None:
@@ -2577,26 +2577,25 @@ class NVTXModuleProfiler:
         if not self.enabled:
             return
 
-        tag = nvtx_tag or module.__class__.__name__
-        self._module_tags[id(module)] = tag
+        self._module_tags[id(module)] = name
 
         if enable_forward:
-            self._register_forward_nvtx(module, tag)
+            self._register_forward_nvtx(module, name)
 
         if enable_backward:
-            self._register_backward_nvtx(module, tag)
+            self._register_backward_nvtx(module, name)
 
-    def _register_forward_nvtx(self, module, tag: str) -> None:
+    def _register_forward_nvtx(self, module, name: str) -> None:
         """Register forward hooks with proper ordering."""
 
         def pre_forward_hook(mod, input):
             """Pre-forward: push NVTX range (executes first)."""
-            torch.cuda.nvtx.range_push(f"{tag}.forward")
+            nvtx_range_push(f"{name}.forward")
             return None
 
         def post_forward_hook(mod, input, output):
             """Post-forward: pop NVTX range (executes last)."""
-            torch.cuda.nvtx.range_pop()
+            nvtx_range_pop()
             return None
 
         handle_pre = module.register_forward_pre_hook(pre_forward_hook, prepend=True)
@@ -2605,17 +2604,17 @@ class NVTXModuleProfiler:
         handle_post = module.register_forward_hook(post_forward_hook)
         self._handles.append(handle_post)
 
-    def _register_backward_nvtx(self, module, tag: str) -> None:
+    def _register_backward_nvtx(self, module, name: str) -> None:
         """Register backward hooks with proper ordering."""
 
         def pre_backward_hook(mod, grad_output):
             """Pre-backward: push NVTX range (executes first)."""
-            torch.cuda.nvtx.range_push(f"{tag}.backward")
+            nvtx_range_push(f"{name}.backward")
             return None
 
         def post_backward_hook(mod, grad_input, grad_output):
             """Post-backward: pop NVTX range (executes last)."""
-            torch.cuda.nvtx.range_pop()
+            nvtx_range_pop()
             return None
 
         handle_pre = module.register_full_backward_pre_hook(pre_backward_hook, prepend=True)
@@ -2627,10 +2626,12 @@ class NVTXModuleProfiler:
     def register_model(
         self,
         model,
-        tag_prefix: str = "",
         recurse: bool = True,
     ) -> None:
-        """Register NVTX markers for an entire model."""
+        """Register NVTX markers for an entire model.
+
+        Uses the module's name from named_modules() as the NVTX tag.
+        """
         if not self.enabled:
             return
 
@@ -2640,11 +2641,9 @@ class NVTXModuleProfiler:
                     isinstance(module, container)
                     for container in [torch.nn.Sequential, torch.nn.ModuleList, torch.nn.ModuleDict]
                 ):
-                    full_tag = f"{tag_prefix}.{name}" if tag_prefix else name
-                    self.register_module(module, nvtx_tag=full_tag)
+                    self.register_module(module, name)
         else:
-            tag = tag_prefix or model.__class__.__name__
-            self.register_module(model, nvtx_tag=tag)
+            self.register_module(model, model.__class__.__name__)
 
     def remove_hooks(self) -> None:
         """Remove all registered hooks."""

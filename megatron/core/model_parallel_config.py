@@ -390,21 +390,15 @@ class ModelParallelConfig:
     """If True, enables double buffering across layers while reloading activations from CPU."""
 
     ###################
-    # Profiling
-    ###################
-    enable_nvtx_profiling: bool = False
-    """If True, enables NVTX profiling for forward and backward passes."""
-
-    ###################
     # Timing
     ###################
     barrier_with_L1_time: bool = field(
         default=True,
         metadata={"argparse_meta": {"arg_names": ["--no-barrier-with-level-1-timing"]}},
     )
-    """Controls barrier with level 1 time measurements. It is up to the user to make sure
-       calling barrier with their timers will not result in hangs. This can happen if for example
-       the user adds a level 1 timer that is not called by all ranks.
+    """Controls barrier with level 1 time measurements. Also enables NVTX profiling when True.
+       It is up to the user to make sure calling barrier with their timers will not result in hangs.
+       This can happen if for example the user adds a level 1 timer that is not called by all ranks.
     """
 
     def __post_init__(self):
