@@ -2579,42 +2579,46 @@ class NVTXModuleProfiler:
 
         self._module_tags[id(module)] = name
 
-        if enable_forward:
-            self._register_forward_nvtx(module, name)
+        # if enable_forward:
+        #     self._register_forward_nvtx(module, name)
 
         if enable_backward:
             self._register_backward_nvtx(module, name)
 
-    def _register_forward_nvtx(self, module, name: str) -> None:
-        """Register forward hooks with proper ordering."""
+    # def _register_forward_nvtx(self, module, name: str) -> None:
+    #     """Register forward hooks with proper ordering."""
 
-        def pre_forward_hook(mod, input):
-            """Pre-forward: push NVTX range (executes first)."""
-            nvtx_range_push(f"{name}.forward")
-            return None
+    #     def pre_forward_hook(mod, input):
+    #         """Pre-forward: push NVTX range (executes first)."""
+    #         nvtx_range_push(f"{name}.forward")
+    #         return None
 
-        def post_forward_hook(mod, input, output):
-            """Post-forward: pop NVTX range (executes last)."""
-            nvtx_range_pop(f"{name}.forward")
-            return None
+    #     def post_forward_hook(mod, input, output):
+    #         """Post-forward: pop NVTX range (executes last)."""
+    #         nvtx_range_pop(f"{name}.forward")
+    #         return None
 
-        handle_pre = module.register_forward_pre_hook(pre_forward_hook, prepend=True)
-        self._handles.append(handle_pre)
+    #     handle_pre = module.register_forward_pre_hook(pre_forward_hook, prepend=True)
+    #     self._handles.append(handle_pre)
 
-        handle_post = module.register_forward_hook(post_forward_hook)
-        self._handles.append(handle_post)
+    #     handle_post = module.register_forward_hook(post_forward_hook)
+    #     self._handles.append(handle_post)
 
     def _register_backward_nvtx(self, module, name: str) -> None:
         """Register backward hooks with proper ordering."""
 
         def pre_backward_hook(mod, grad_output):
             """Pre-backward: push NVTX range (executes first)."""
+            torch.cuda.nvtx.range_pop()
             nvtx_range_push(f"{name}.backward")
+            torch.cuda.nvtx.range_push("...")
             return None
 
         def post_backward_hook(mod, grad_input, grad_output):
             """Post-backward: pop NVTX range (executes last)."""
+            torch.cuda.nvtx.range_pop()
             nvtx_range_pop(f"{name}.backward")
+            torch.cuda.nvtx.range_push("...")
             return None
 
         handle_pre = module.register_full_backward_pre_hook(pre_backward_hook, prepend=True)

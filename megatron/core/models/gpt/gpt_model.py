@@ -266,9 +266,7 @@ class GPTModel(LanguageModule):
                 quant_config = get_quant_config_or_none(name, self.config.quant_recipe)
                 module.finish_init(quant_config)
 
-        # Enable NVTX profiling if configured
-        if self.config.barrier_with_L1_time:
-            self.enable_nvtx_profiling()
+        # self.enable_nvtx_profiling()
 
     def enable_nvtx_profiling(self, enabled: bool = True):
         """Enable NVTX profiling for the model.
