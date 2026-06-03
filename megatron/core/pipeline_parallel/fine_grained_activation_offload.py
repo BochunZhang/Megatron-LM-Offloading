@@ -10,6 +10,7 @@ import torch
 DEBUG = False
 DEBUG_RANK = 0
 
+from megatron.core.fp8_utils import is_mxfp8tensor, is_float8tensor
 from megatron.core.transformer.cuda_graphs import is_graph_capturing
 
 
@@ -711,7 +712,13 @@ class PipelineOffloadManager:
         Hook called when autograd saves a tensor for backward pass.
         Returns a tag to identify the tensor later.
         """
-        debug_rank(f"------on_save_for_backward {tensor.shape}")
+        debug_rank(f"------on_save_for_backward "
+                   f"shape {tensor.shape}, "
+                   f"dtype {tensor.dtype}, "
+                   f"param {isinstance(tensor, torch.nn.Parameter)}, "
+                   f"offloading_activation {getattr(tensor, 'offloading_activation', None)}, "
+                   f"mxfp8 {getattr(tensor, '_fp8_dtype') if is_mxfp8tensor(tensor) else False}, "
+                   f"float8 {getattr(tensor, '_float8_dtype') if is_float8tensor(tensor) else False}")
         assert self.inside_context, "Must be inside offload context"
         return self.cur_forward_chunk().tensor_push(tensor)
 
@@ -843,7 +850,7 @@ class ChunkOffloadHandler:
         tensor_tag = (self._offloaded_group_index, self._tensor_count_current_group)
         self._tensor_count_current_group += 1
         self.offload_groups[self._offloaded_group_index - 1].push_tensor(tensor_tag, tensor)
-        debug_rank(f"--------tensor_push {tensor_tag}")
+        debug_rank(f"--------tensor_push {tensor_tag}, group {self._offloaded_group_index - 1}, name {self.offload_groups[self._offloaded_group_index - 1]._name}")
         return tensor_tag
 
     def tensor_pop(self, tensor_tag):
