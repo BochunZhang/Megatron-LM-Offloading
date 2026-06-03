@@ -2679,6 +2679,8 @@ class _NVTXRangeStartFunc(torch.autograd.Function):
         # phase: "forward" or "recompute"
         ctx.name = name
         ctx.phase = phase
+        # 只有在梯度启用时才需要 backward 标记
+        ctx.has_grad = torch.is_grad_enabled() and x.requires_grad
         if _nvtx_enabled:
             torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_push(f"{name}.{phase}")
@@ -2691,6 +2693,8 @@ class _NVTXRangeStartFunc(torch.autograd.Function):
         if _nvtx_enabled:
             torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_push(f"")
             torch.cuda.nvtx.range_push(f"")
         return grad_output, None, None
 
@@ -2717,7 +2721,9 @@ class _NVTXRangeEndFunc(torch.autograd.Function):
         # backward 逆序执行, 这个在 backward 开始时执行, 负责 push
         if _nvtx_enabled:
             torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_pop()
             torch.cuda.nvtx.range_push(f"{ctx.name}.backward")
+            torch.cuda.nvtx.range_push(f"")
             torch.cuda.nvtx.range_push(f"")
         return grad_output, None, None
 

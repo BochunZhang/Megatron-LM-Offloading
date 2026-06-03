@@ -113,8 +113,8 @@ class LanguageModelEmbedding(MegatronModule):
         Returns:
             Tensor: The output embeddings
         """
-        # nvtx_range_push(suffix="word_embeddings")
-        nvtx_range_start(input_ids, self.nvtx_name)
+        nvtx_range_push(self.nvtx_name)
+        # input_ids = nvtx_range_start(input_ids, self.nvtx_name)
         word_embeddings = self.word_embeddings(input_ids)
         if self.add_position_embedding:
             position_embeddings = self.position_embeddings(position_ids)
@@ -153,7 +153,7 @@ class LanguageModelEmbedding(MegatronModule):
                 embeddings = self.embedding_dropout(embeddings)
         else:
             embeddings = self.embedding_dropout(embeddings)
-        nvtx_range_end(embeddings, self.nvtx_name)
-        # nvtx_range_pop(suffix="word_embeddings")
+        # embeddings = nvtx_range_end(embeddings, self.nvtx_name)
+        nvtx_range_pop(self.nvtx_name)
 
         return embeddings
