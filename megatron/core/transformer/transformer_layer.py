@@ -512,17 +512,17 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         # this is only used to uniquely identify decode and non-decode cuda graph
         # runners in the cuda graph manager
         kwargs.pop("dynamic_inference_decode_only", None)
-        layer_type = "moe" if self.is_moe_layer else "dense"
+        # layer_type = "moe" if self.is_moe_layer else "dense"
         # nvtx_range_push(f"{layer_type}.layer[{self.layer_number}]")
-        nvtx_range_start(f"{layer_type}.layer.{self.layer_number}")
+        nvtx_range_start(kwargs['hidden_states'], self.nvtx_name)
         hidden_states, context = self._forward_attention(*args, **kwargs)
         output = self._forward_mlp(
             hidden_states,
             kwargs.get("inference_context", None),
             padding_mask=kwargs.get("padding_mask", None),
         )
-        nvtx_range_end(f"{layer_type}.layer.{self.layer_number}")
-        # nvtx_range_end(f"{layer_type}.layer.{self.layer_number}")
+        nvtx_range_end(output, self.nvtx_name)
+        # nvtx_range_pop(f"{layer_type}.layer[{self.layer_number}]")
         return output, context
 
     def _forward_attention(

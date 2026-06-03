@@ -12,6 +12,8 @@ from megatron.core.utils import get_tensor_model_parallel_group_if_none, nvtx_de
 from megatron.core.utils import (
     nvtx_range_pop,
     nvtx_range_push,
+    nvtx_range_start,
+    nvtx_range_end,
 )
 
 class LanguageModelEmbedding(MegatronModule):
@@ -111,7 +113,8 @@ class LanguageModelEmbedding(MegatronModule):
         Returns:
             Tensor: The output embeddings
         """
-        nvtx_range_push(suffix="word_embeddings")
+        # nvtx_range_push(suffix="word_embeddings")
+        nvtx_range_start(input_ids, self.nvtx_name)
         word_embeddings = self.word_embeddings(input_ids)
         if self.add_position_embedding:
             position_embeddings = self.position_embeddings(position_ids)
@@ -150,6 +153,7 @@ class LanguageModelEmbedding(MegatronModule):
                 embeddings = self.embedding_dropout(embeddings)
         else:
             embeddings = self.embedding_dropout(embeddings)
-        nvtx_range_pop(suffix="word_embeddings")
+        nvtx_range_end(embeddings, self.nvtx_name)
+        # nvtx_range_pop(suffix="word_embeddings")
 
         return embeddings

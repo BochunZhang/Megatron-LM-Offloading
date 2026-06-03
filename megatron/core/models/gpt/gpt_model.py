@@ -40,6 +40,7 @@ from megatron.core.utils import (
     deprecate_inference_params,
     is_using_quantization_scales,
     NVTXModuleProfiler,
+    set_nvtx_name,
 )
 
 
@@ -265,6 +266,8 @@ class GPTModel(LanguageModule):
             if hasattr(module, 'finish_init'):
                 quant_config = get_quant_config_or_none(name, self.config.quant_recipe)
                 module.finish_init(quant_config)
+
+        set_nvtx_name(self, "gpt")
 
         # self.enable_nvtx_profiling()
 
