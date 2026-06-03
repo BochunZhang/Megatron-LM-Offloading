@@ -31,6 +31,8 @@ from megatron.core.utils import (
     make_viewless_tensor,
     nvtx_range_pop,
     nvtx_range_push,
+    nvtx_range_start,
+    nvtx_range_end,
 )
 
 logger = logging.getLogger(__name__)
@@ -511,14 +513,16 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
         # runners in the cuda graph manager
         kwargs.pop("dynamic_inference_decode_only", None)
         layer_type = "moe" if self.is_moe_layer else "dense"
-        nvtx_range_push(f"{layer_type}.layer[{self.layer_number}]")
+        # nvtx_range_push(f"{layer_type}.layer[{self.layer_number}]")
+        nvtx_range_start(f"{layer_type}.layer.{self.layer_number}")
         hidden_states, context = self._forward_attention(*args, **kwargs)
         output = self._forward_mlp(
             hidden_states,
             kwargs.get("inference_context", None),
             padding_mask=kwargs.get("padding_mask", None),
         )
-        nvtx_range_pop(f"{layer_type}.layer[{self.layer_number}]")
+        nvtx_range_end(f"{layer_type}.layer.{self.layer_number}")
+        # nvtx_range_end(f"{layer_type}.layer.{self.layer_number}")
         return output, context
 
     def _forward_attention(

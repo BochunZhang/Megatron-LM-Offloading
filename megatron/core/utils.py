@@ -2661,3 +2661,118 @@ class NVTXModuleProfiler:
 
     def __exit__(self, *args):
         self.remove_hooks()
+
+
+###############################################
+### NVTX Functional API (torch.autograd.Function)
+###############################################
+
+class _NVTXRangeStartFunc(torch.autograd.Function):
+    """
+    在 forward 中 push NVTX range，在 backward 中 pop。
+
+    利用 backward 逆序执行的特性，实现 forward/backward 成对标记。
+    """
+
+    @staticmethod
+    def forward(ctx, x, name, phase):
+        # phase: "forward" or "recompute"
+        ctx.name = name
+        ctx.phase = phase
+        if _nvtx_enabled:
+            torch.cuda.nvtx.range_push(f"{name}.{phase}")
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # backward 逆序执行，这个在 backward 末尾执行，负责 pop
+        if _nvtx_enabled:
+            torch.cuda.nvtx.range_pop()
+        return grad_output, None, None
+
+
+class _NVTXRangeEndFunc(torch.autograd.Function):
+    """
+    在 forward 中 pop NVTX range，在 backward 中 push。
+
+    利用 backward 逆序执行的特性，实现 forward/backward 成对标记。
+    """
+
+    @staticmethod
+    def forward(ctx, x, name, phase):
+        ctx.name = name
+        ctx.phase = phase
+        if _nvtx_enabled:
+            torch.cuda.nvtx.range_pop()
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # backward 逆序执行，这个在 backward 开始时执行，负责 push
+        if _nvtx_enabled:
+            torch.cuda.nvtx.range_push(f"{ctx.name}.backward")
+        return grad_output, None, None
+
+
+def nvtx_range_start(x: torch.Tensor, name: str, phase: str = "forward") -> torch.Tensor:
+    """
+    使用 torch.autograd.Function 实现 NVTX range push。
+
+    与 nvtx_range_pop_functional 配合使用，可以实现 forward/backward 成对标记。
+
+    标记时序：
+        Forward: push (by StartFunc) → ... → pop (by EndFunc)
+        Backward: push (by EndFunc.backward) → ... → pop (by StartFunc.backward)
+
+    Args:
+        x: 输入张量，会被原样返回（identity 操作）
+        name: NVTX range 的名称，例如 "TransformerLayer.0"
+        phase: 阶段标记，可以是 "forward" 或 "recompute"（默认为 "forward"）
+               最终标记名称为 "{name}.{phase}", backward 时统一为 "{name}.backward"
+
+    Returns:
+        原张量（identity 操作，计算图节点会记录 NVTX 标记）
+
+    使用示例：
+        >>> # 在 module 的 forward 中手动添加标记
+        >>> def forward(self, x):
+        ...     # 开始标记 forward 阶段
+        ...     x = nvtx_range_start(x, "MyTransformerLayer.0", "forward")
+        ...     x = self.attention(x)
+        ...     x = self.mlp(x)
+        ...     # 结束标记，同时准备在 backward 时标记
+        ...     x = nvtx_range_end(x, "MyTransformerLayer.0", "forward")
+        ...     return x
+
+        >>> # 也可以用于重计算阶段
+        >>> def recompute_activation(self, x):
+        ...     x = nvtx_range_start(x, "MyTransformerLayer.0", "recompute")
+        ...     x = self.checkpointed_op(x)
+        ...     x = nvtx_range_pop_functional(x, "MyTransformerLayer.0", "recompute")
+        ...     return x
+
+    注意事项：
+        1. 必须和 nvtx_range_pop_functional 配对使用，否则 forward 的 range 不会 pop
+        2. 该操作是 identity (x == output), 不会修改数据
+        3. 只有当 configure_nvtx_profiling(True) 后才会实际生成 NVTX 标记
+    """
+    return _NVTXRangeStartFunc.apply(x, name, phase)
+
+
+def nvtx_range_end(x: torch.Tensor, name: str, phase: str = "forward") -> torch.Tensor:
+    """
+    使用 torch.autograd.Function 实现 NVTX range pop。
+
+    与 nvtx_range_push_functional 配合使用，可以实现 forward/backward 成对标记。
+
+    Args:
+        x: 输入张量，会被原样返回（identity 操作）
+        name: NVTX range 的名称，必须与 push 时的 name 一致
+        phase: 阶段标记，必须与 push 时的 phase 一致（仅用于验证，实际 backward 标记为 "backward"）
+
+    Returns:
+        原张量（identity 操作，计算图节点会记录 NVTX 标记）
+
+    使用示例：参见 nvtx_range_push_functional
+    """
+    return _NVTXRangeEndFunc.apply(x, name, phase)
