@@ -717,8 +717,8 @@ class PipelineOffloadManager:
                    f"dtype {tensor.dtype}, "
                    f"param {isinstance(tensor, torch.nn.Parameter)}, "
                    f"offloading_activation {getattr(tensor, 'offloading_activation', None)}, "
-                   f"mxfp8 {getattr(tensor, '_fp8_dtype') if is_mxfp8tensor(tensor) else False}, "
-                   f"float8 {getattr(tensor, '_float8_dtype') if is_float8tensor(tensor) else False}")
+                   f"mxfp8 {getattr(tensor, '_fp8_dtype', True) if is_mxfp8tensor(tensor) else False}, "
+                   f"float8 {getattr(tensor, 'fp8_dtype', True) if is_float8tensor(tensor) else False}")
         assert self.inside_context, "Must be inside offload context"
         return self.cur_forward_chunk().tensor_push(tensor)
 
