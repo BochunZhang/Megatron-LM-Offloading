@@ -6,6 +6,7 @@ NSYS Profile Analyzer V3
 Usage:
     python nsys_profile_analyzer.py --sqlite <sqlite_path> --json <json_path> --output <output_dir>
     python nsys_profile_analyzer.py -s <sqlite_path> -j <json_path> -o <output_dir>
+    python nsys_profile_analyzer.py -s <sqlite_path> -j <json_path> -o <output_dir> --rank 0 1
 """
 
 import argparse
@@ -189,6 +190,41 @@ class CopyOperation:
     gpu_end_ns: Optional[int] = None
 
 
+@dataclass
+class ActivationCopyInfo:
+    """单个 copy_ 操作的详细信息"""
+    group: str                      # offload group 名称, e.g. qkv_linear
+    activation: str                 # 激活值名称，需要结合代码推断
+    shape: List[int]                # tensor 形状
+    size_bytes: int                 # 通信量 (bytes) - 来自 CUDA memcpy event
+    byte_per_element: int           # 每个元素的字节数 - 计算得出
+    throughput_gibs: float          # 吞吐 (GiB/s)
+    gpu_start_ns: Optional[int]     # GPU 开始时间
+    gpu_end_ns: Optional[int]       # GPU 结束时间
+    gpu_duration_ns: Optional[int]  # GPU 执行时长
+    memcpy_size_bytes: Optional[int] = None  # 从 CudaEvent 获取的实际 sizebytes
+
+
+@dataclass
+class ActivationOffloadGroup:
+    """一个 offload group 的信息（包含多个 copy_）"""
+    group: str                      # group 名称, e.g. core_attn
+    operation_type: str             # "offload" or "reload"
+    copies: List[ActivationCopyInfo] = field(default_factory=list)
+    total_size_bytes: int = 0
+    total_throughput_gibs: float = 0.0
+    gpu_start_ns: Optional[int] = None
+    gpu_end_ns: Optional[int] = None
+
+    def calculate_totals(self):
+        """计算总通信量和总吞吐"""
+        self.total_size_bytes = sum(c.size_bytes for c in self.copies)
+        if self.copies:
+            total_duration_ns = sum(c.gpu_duration_ns or 0 for c in self.copies)
+            if total_duration_ns > 0:
+                self.total_throughput_gibs = (self.total_size_bytes / (1024**3)) / (total_duration_ns / 1e9)
+
+
 # ============== 辅助函数 ==============
 
 def parse_tid_structure(tid: int) -> Dict:
@@ -268,7 +304,9 @@ def extract_iteration(text: str) -> Optional[int]:
 
 
 def extract_sizes_from_text(text: str) -> List[List[int]]:
-    match = re.search(r'sizes\s*=\s*(\[.+?\])', text)
+    """Extract sizes array from text, handling nested arrays properly."""
+    # Look for sizes = [...] pattern, handling nested arrays
+    match = re.search(r'sizes\s*=\s*(\[[\[\]\d,\s]+\])', text)
     if match:
         try:
             sizes_str = match.group(1)
@@ -292,11 +330,12 @@ def calculate_tensor_bytes(sizes: List[List[int]], dtype_size: int = 4) -> int:
 # ============== 主分析器类 ==============
 
 class NSYSAnalyzer:
-    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16):
+    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16, rank: Optional[List[int]] = None):
         self.json_filepath = json_filepath
         self.sqlite_filepath = sqlite_filepath
         self.output_dir = output_dir
         self.iteration = iteration
+        self.rank = rank if rank is not None else [0, 1, 2, 3]  # Default to all ranks
         self.devices: Dict[int, DeviceInfo] = {}  # key: cuda device id
         self.nvtx_events: List[NvtxEvent] = []
         self.cuda_events_by_sig_corr: Dict[int, Dict[int, CudaEvent]] = defaultdict(dict)
@@ -311,6 +350,7 @@ class NSYSAnalyzer:
         self.iterations: Dict[int, List[NvtxEvent]] = defaultdict(list)
         self.string_table: Dict[str, str] = {}
         self.sig_to_device: Dict[int, int] = {}  # process_signature -> main device_id
+        self.allowed_devices: Set[int] = set(self.rank)  # Set of allowed device IDs for filtering
 
     def log_bug(self, message: str):
         self.bugs.append(message)
@@ -321,9 +361,10 @@ class NSYSAnalyzer:
         return name_id
 
     def load_devices_from_sqlite(self):
-        """从 sqlite 数据库加载 GPU 设备信息"""
+        """从 sqlite 数据库加载 GPU 设备信息，并根据 --rank 参数过滤"""
         print("=" * 80)
         print("Loading device info from SQLite")
+        print(f"Filtering devices: {sorted(self.allowed_devices)}")
         print("=" * 80)
 
         conn = sqlite3.connect(self.sqlite_filepath)
@@ -335,16 +376,21 @@ class NSYSAnalyzer:
 
         for row in rows:
             nsys_gpu_id, name, bus_location, cu_device = row
-            device_info = DeviceInfo(
-                device_id=cu_device,      # CUDA device id
-                nsys_gpu_id=nsys_gpu_id,
-                name=name,
-                pcie_bus=bus_location     # e.g., "0009:01:00.0"
-            )
-            self.devices[cu_device] = device_info
-            print(f"  Device {cu_device}: {name}, PCIe={bus_location}")
+            # 只加载在 allowed_devices 中的设备
+            if cu_device in self.allowed_devices:
+                device_info = DeviceInfo(
+                    device_id=cu_device,      # CUDA device id
+                    nsys_gpu_id=nsys_gpu_id,
+                    name=name,
+                    pcie_bus=bus_location     # e.g., "0009:01:00.0"
+                )
+                self.devices[cu_device] = device_info
+                print(f"  Device {cu_device}: {name}, PCIe={bus_location} [LOADED]")
+            else:
+                print(f"  Device {cu_device}: {name}, PCIe={bus_location} [SKIPPED - not in rank filter]")
 
         conn.close()
+        print(f"Loaded {len(self.devices)} devices out of {len(rows)} total")
 
     def load_and_parse(self):
         print("\n" + "=" * 80)
@@ -520,6 +566,10 @@ class NSYSAnalyzer:
 
         device_id = int(cuda_data.get("deviceId", -1))
         stream_id = str(cuda_data.get("streamId", "0"))
+
+        # Filter by device_id based on --rank parameter
+        if device_id not in self.allowed_devices:
+            return
 
         # 检测是否为同步事件 (eventClass=5 或有 sync 字段)
         is_sync = False
@@ -1727,6 +1777,853 @@ class NSYSAnalyzer:
         print("=" * 80)
         self.export_step_gpu_excel_v2(iteration, self.output_dir)
 
+        print("\n" + "=" * 80)
+        print(f"Exporting iteration {iteration} activation offload/reload analysis")
+        print("=" * 80)
+        self.export_offload_reload_excel(iteration, self.output_dir)
+
+        print("\n" + "=" * 80)
+        print(f"Exporting iteration {iteration} activation summary")
+        print("=" * 80)
+        self.export_summary_excel(iteration, self.output_dir)
+
+    def _get_step_time_range(self, iteration_num: int, step_type: StepType) -> Optional[Tuple[int, int]]:
+        """Get the time range for the first step of a given type in an iteration.
+
+        Returns:
+            Tuple of (start_ns, end_ns) or None if not found
+        """
+        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
+        if not iteration_events:
+            return None
+
+        iteration_start = min(e.cpu_start_ns for e in iteration_events)
+        iteration_end = max(e.cpu_end_ns for e in iteration_events)
+
+        steps = []
+        for nvtx in self.nvtx_events:
+            if nvtx.step_type == step_type:
+                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
+                    steps.append(nvtx)
+
+        if not steps:
+            return None
+
+        steps.sort(key=lambda e: e.cpu_start_ns)
+        first_step = steps[0]
+        return (first_step.cpu_start_ns, first_step.cpu_end_ns)
+
+    def _extract_activation_groups_for_step(self, iteration_num: int, step_type: StepType, operation_type: str) -> Tuple[List[ActivationOffloadGroup], Dict[str, int]]:
+        """Extract activation offload/reload groups for a specific step.
+
+        This method finds FineGrainedOffloading events that occur within the time range
+        of the specified step, then extracts activation data from them.
+
+        Args:
+            iteration_num: The iteration number
+            step_type: FORWARD or BACKWARD
+            operation_type: "offload" or "reload"
+
+        Returns:
+            Tuple of (groups, group_counts) where:
+                - groups: List of ActivationOffloadGroup objects (first occurrence only)
+                - group_counts: Dict mapping group name to total count
+        """
+        # Get iteration time range
+        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
+        if not iteration_events:
+            return [], {}
+
+        iteration_start = min(e.cpu_start_ns for e in iteration_events)
+        iteration_end = max(e.cpu_end_ns for e in iteration_events)
+
+        # Get all steps of the given type within iteration
+        steps = []
+        for nvtx in self.nvtx_events:
+            if nvtx.step_type == step_type:
+                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
+                    steps.append(nvtx)
+
+        if not steps:
+            return [], {}
+
+        steps.sort(key=lambda e: e.cpu_start_ns)
+        first_step = steps[0]
+        step_start = first_step.cpu_start_ns
+        step_end = first_step.cpu_end_ns
+
+        # Find FineGrainedOffloading events within this step's time range
+        target_events = []
+        for nvtx in self.nvtx_events:
+            text = nvtx.text
+            if "FineGrainedOffloading" not in text:
+                continue
+            # Check if event is within step time range (use CPU time)
+            if step_start <= nvtx.cpu_start_ns <= step_end:
+                # For offload: look for Commit events (includes GroupCommit)
+                # For reload: look for Start events (includes StartFunction and StartFunctionBackward)
+                if operation_type == "offload" and "Commit" in text:
+                    target_events.append(nvtx)
+                elif operation_type == "reload" and ("Start" in text or "Backward" in text) and "Commit" not in text:
+                    target_events.append(nvtx)
+
+        # First pass: count all group occurrences
+        group_counts = {}
+        for parent_nvtx in target_events:
+            for child in parent_nvtx.children:
+                if not isinstance(child, NvtxEvent):
+                    continue
+
+                child_text_lower = child.text.lower()
+                is_offloading = "activation offloading" in child_text_lower
+                is_reloading = "activation reloading" in child_text_lower
+
+                if (operation_type == "offload" and is_offloading) or \
+                   (operation_type == "reload" and is_reloading):
+                    parts = child.text.split()
+                    if len(parts) < 3:
+                        continue
+
+                    group_name = parts[-1]
+                    group_counts[group_name] = group_counts.get(group_name, 0) + 1
+
+        # Second pass: extract data (only first occurrence of each group)
+        groups = []
+        seen_groups = set()
+
+        for parent_nvtx in target_events:
+            for child in parent_nvtx.children:
+                if not isinstance(child, NvtxEvent):
+                    continue
+
+                child_text_lower = child.text.lower()
+                is_offloading = "activation offloading" in child_text_lower
+                is_reloading = "activation reloading" in child_text_lower
+
+                if (operation_type == "offload" and is_offloading) or \
+                   (operation_type == "reload" and is_reloading):
+                    parts = child.text.split()
+                    if len(parts) < 3:
+                        continue
+
+                    group_name = parts[-1]
+
+                    # Skip if we've already seen this group (keep only first occurrence)
+                    if group_name in seen_groups:
+                        continue
+                    seen_groups.add(group_name)
+
+                    # Extract copy operations under this activation event
+                    copies = []
+                    for copy_child in child.children:
+                        if not isinstance(copy_child, NvtxEvent):
+                            continue
+                        if "aten::copy_" not in copy_child.text.lower():
+                            continue
+
+                        sizes = copy_child.sizes
+                        if not sizes:
+                            continue
+
+                        for shape in sizes:
+                            if not shape:
+                                continue
+
+                            # Calculate shape size (number of elements)
+                            num_elements = 1
+                            for dim in shape:
+                                num_elements *= dim
+
+                            if num_elements == 0:
+                                continue
+
+                            # Find associated memcpy event first to get actual size
+                            memcpy_evt = None
+                            for grandchild in copy_child.children:
+                                if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
+                                    memcpy_evt = grandchild
+                                    break
+
+                            if not memcpy_evt or not memcpy_evt.gpu_start_ns:
+                                continue
+
+                            # Use actual bytes from CUDA memcpy event
+                            size_bytes = memcpy_evt.memcpy_size_bytes or (num_elements * 4)
+                            if not size_bytes:
+                                size_bytes = num_elements * 4  # fallback
+
+                            # Calculate byte/element
+                            byte_per_element = size_bytes // num_elements
+                            if byte_per_element < 1:
+                                byte_per_element = 4
+
+                            throughput_gibs = 0.0
+                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
+                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
+
+                            copy_info = ActivationCopyInfo(
+                                group=group_name,
+                                activation=f"tensor_{len(copies)}",
+                                shape=shape,
+                                size_bytes=size_bytes,
+                                byte_per_element=byte_per_element,
+                                throughput_gibs=throughput_gibs,
+                                gpu_start_ns=memcpy_evt.gpu_start_ns,
+                                gpu_end_ns=memcpy_evt.gpu_end_ns,
+                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
+                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
+                            )
+                            copies.append(copy_info)
+
+                    if copies:
+                        group = ActivationOffloadGroup(
+                            group=group_name,
+                            operation_type=operation_type,
+                            copies=copies
+                        )
+                        group.calculate_totals()
+                        groups.append(group)
+
+        return groups, group_counts
+        """Extract activation offload/reload groups for a specific step.
+
+        This method finds FineGrainedOffloading events that occur within the time range
+        of the specified step, then extracts activation data from them.
+
+        Args:
+            iteration_num: The iteration number
+            step_type: FORWARD or BACKWARD
+            operation_type: "offload" or "reload"
+
+        Returns:
+            List of ActivationOffloadGroup objects
+        """
+        # Get iteration time range
+        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
+        if not iteration_events:
+            return []
+
+        iteration_start = min(e.cpu_start_ns for e in iteration_events)
+        iteration_end = max(e.cpu_end_ns for e in iteration_events)
+
+        # Get all steps of the given type within iteration
+        steps = []
+        for nvtx in self.nvtx_events:
+            if nvtx.step_type == step_type:
+                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
+                    steps.append(nvtx)
+
+        if not steps:
+            return []
+
+        steps.sort(key=lambda e: e.cpu_start_ns)
+        first_step = steps[0]
+        step_start = first_step.cpu_start_ns
+        step_end = first_step.cpu_end_ns
+
+        # Find FineGrainedOffloading events within this step's time range
+        target_events = []
+        for nvtx in self.nvtx_events:
+            text = nvtx.text
+            if "FineGrainedOffloading" not in text:
+                continue
+            # Check if event is within step time range (use CPU time)
+            if step_start <= nvtx.cpu_start_ns <= step_end:
+                # For offload: look for Commit events (includes GroupCommit)
+                # For reload: look for Start events (includes StartFunction and StartFunctionBackward)
+                if operation_type == "offload" and "Commit" in text:
+                    target_events.append(nvtx)
+                elif operation_type == "reload" and ("Start" in text or "Backward" in text) and "Commit" not in text:
+                    target_events.append(nvtx)
+
+        # Extract activation groups from these events
+        groups = []
+        seen_groups = set()
+
+        for parent_nvtx in target_events:
+            # Look for activation events as children
+            for child in parent_nvtx.children:
+                if not isinstance(child, NvtxEvent):
+                    continue
+
+                child_text_lower = child.text.lower()
+                is_offloading = "activation offloading" in child_text_lower
+                is_reloading = "activation reloading" in child_text_lower
+
+                if (operation_type == "offload" and is_offloading) or \
+                   (operation_type == "reload" and is_reloading):
+                    # Extract group name
+                    parts = child.text.split()
+                    if len(parts) < 3:
+                        continue
+
+                    group_name = parts[-1]
+
+                    # Skip if we've already seen this group (keep only first occurrence)
+                    if group_name in seen_groups:
+                        continue
+                    seen_groups.add(group_name)
+
+                    # Extract copy operations under this activation event
+                    copies = []
+                    for copy_child in child.children:
+                        if not isinstance(copy_child, NvtxEvent):
+                            continue
+                        if "aten::copy_" not in copy_child.text.lower():
+                            continue
+
+                        sizes = copy_child.sizes
+                        if not sizes:
+                            continue
+
+                        for shape in sizes:
+                            if not shape:
+                                continue
+
+                            # Calculate size
+                            size_bytes = 4  # assume float32
+                            for dim in shape:
+                                size_bytes *= dim
+
+                            # Find associated memcpy event
+                            memcpy_evt = None
+                            for grandchild in copy_child.children:
+                                if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
+                                    memcpy_evt = grandchild
+                                    break
+
+                            if not memcpy_evt or not memcpy_evt.gpu_start_ns:
+                                continue
+
+                            throughput_gibs = 0.0
+                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
+                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
+
+                            copy_info = ActivationCopyInfo(
+                                group=group_name,
+                                activation=f"tensor_{len(copies)}",
+                                shape=shape,
+                                size_bytes=size_bytes,
+                                throughput_gibs=throughput_gibs,
+                                gpu_start_ns=memcpy_evt.gpu_start_ns,
+                                gpu_end_ns=memcpy_evt.gpu_end_ns,
+                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
+                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
+                            )
+                            copies.append(copy_info)
+
+                    if copies:
+                        group = ActivationOffloadGroup(
+                            group=group_name,
+                            operation_type=operation_type,
+                            copies=copies
+                        )
+                        group.calculate_totals()
+                        groups.append(group)
+
+        return groups
+
+    def _extract_activation_groups_from_step(self, step_nvtx: NvtxEvent, operation_type: str) -> List[ActivationOffloadGroup]:
+        """Extract activation offload/reload groups from a step NVTX event.
+
+        Args:
+            step_nvtx: The step NVTX event (forward_step or backward_step)
+            operation_type: "offload" or "reload"
+
+        Returns:
+            List of ActivationOffloadGroup objects
+        """
+        groups = []
+        seen_groups = set()  # Track seen group names to keep only first occurrence
+
+        def collect_offloading_events(evt: BaseEvent):
+            """Recursively collect FineGrainedOffloading events"""
+            if isinstance(evt, NvtxEvent):
+                # Check for FineGrainedOffloading events
+                if "FineGrainedOffloading" in evt.text:
+                    # This is an offload/reload operation
+                    # Look for "activation offloading {group}" child events
+                    for child in evt.children:
+                        if isinstance(child, NvtxEvent):
+                            child_text_lower = child.text.lower()
+                            if (operation_type == "offload" and "activation offloading" in child_text_lower) or \
+                               (operation_type == "reload" and "activation reloading" in child_text_lower):
+                                # Extract group name
+                                parts = child.text.split()
+                                if len(parts) >= 3:
+                                    group_name = parts[-1]
+
+                                    # Skip if we've already seen this group name
+                                    if group_name in seen_groups:
+                                        continue
+                                    seen_groups.add(group_name)
+
+                                    # Extract copy operations under this activation event
+                                    copies = []
+                                    for copy_child in child.children:
+                                        if isinstance(copy_child, NvtxEvent) and "aten::copy_" in copy_child.text.lower():
+                                            # Extract size info from copy NVTX
+                                            sizes = copy_child.sizes
+                                            if sizes:
+                                                for shape in sizes:
+                                                    if shape:
+                                                        size_bytes = 4  # assume float32
+                                                        for dim in shape:
+                                                            size_bytes *= dim
+
+                                                        # Find associated memcpy event
+                                                        memcpy_evt = None
+                                                        for grandchild in copy_child.children:
+                                                            if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
+                                                                memcpy_evt = grandchild
+                                                                break
+
+                                                        if memcpy_evt and memcpy_evt.gpu_start_ns:
+                                                            throughput_gibs = 0.0
+                                                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
+                                                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
+
+                                                            copy_info = ActivationCopyInfo(
+                                                                group=group_name,
+                                                                activation=f"tensor_{len(copies)}",
+                                                                shape=shape,
+                                                                size_bytes=size_bytes,
+                                                                throughput_gibs=throughput_gibs,
+                                                                gpu_start_ns=memcpy_evt.gpu_start_ns,
+                                                                gpu_end_ns=memcpy_evt.gpu_end_ns,
+                                                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
+                                                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
+                                                            )
+                                                            copies.append(copy_info)
+
+                                    if copies:
+                                        group = ActivationOffloadGroup(
+                                            group=group_name,
+                                            operation_type=operation_type,
+                                            copies=copies
+                                        )
+                                        group.calculate_totals()
+                                        groups.append(group)
+
+                # Continue recursively
+                for child in evt.children:
+                    collect_offloading_events(child)
+
+        collect_offloading_events(step_nvtx)
+        return groups
+
+    def _get_first_step_by_type(self, iteration_num: int, step_type: StepType) -> Optional[NvtxEvent]:
+        """Get the first step of a given type in an iteration.
+
+        Returns:
+            The first NvtxEvent matching the step_type, or None if not found
+        """
+        # Find iteration events
+        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
+        if not iteration_events:
+            return None
+
+        iteration_start = min(e.cpu_start_ns for e in iteration_events)
+        iteration_end = max(e.cpu_end_ns for e in iteration_events)
+
+        # Find steps of the given type
+        steps = []
+        for nvtx in self.nvtx_events:
+            if nvtx.step_type == step_type:
+                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
+                    steps.append(nvtx)
+
+        if not steps:
+            return None
+
+        # Sort by CPU start time and return the first
+        steps.sort(key=lambda e: e.cpu_start_ns)
+        return steps[0]
+
+    def export_offload_reload_excel(self, iteration_num: int, output_dir: str):
+        """Export offload and reload Excel tables for a specific iteration.
+
+        Creates one Excel file per device with 4 sheets:
+        - offload: detailed offload data from forward_step[0]
+        - reload: detailed reload data from backward_step[0]
+        - summary offload: aggregated offload data (TODO)
+        - summary reload: aggregated reload data (TODO)
+        """
+        if not OPENPYXL_AVAILABLE:
+            print("openpyxl not available, skipping offload/reload Excel export")
+            return
+
+        # Get offload groups from forward_step[0]
+        offload_groups, offload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
+        # Get reload groups from backward_step[0]
+        reload_groups, reload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
+
+        if not offload_groups and not reload_groups:
+            print(f"No offload/reload data found for iteration {iteration_num}")
+            return
+
+        # Organize by device
+        device_groups = {}
+        for group in offload_groups:
+            if group.copies:
+                device_id = 0  # Default
+                device_groups.setdefault(device_id, {'offload': [], 'reload': []})['offload'].append(group)
+        for group in reload_groups:
+            device_id = 0  # Default
+            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
+
+        # Create Excel file per device
+        for device_id, groups_data in device_groups.items():
+            device_info = self.devices.get(device_id)
+            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
+            pcie_suffix = pcie_bus.replace(":", "_")
+
+            device_dir = os.path.join(output_dir, pcie_suffix)
+            os.makedirs(device_dir, exist_ok=True)
+
+            filename = os.path.join(device_dir, f"activation_offload_analysis_{pcie_suffix}.xlsx")
+            wb = Workbook()
+
+            # Create offload sheet (detailed data)
+            if groups_data['offload']:
+                self._create_detail_sheet_with_merge(wb, "offload", groups_data['offload'], iteration_num, pcie_bus)
+            else:
+                ws = wb.active
+                ws.title = "offload"
+                ws['A1'] = "No offload data found"
+
+            # Create reload sheet (detailed data)
+            if groups_data['reload']:
+                self._create_detail_sheet_with_merge(wb, "reload", groups_data['reload'], iteration_num, pcie_bus)
+            else:
+                ws = wb.create_sheet(title="reload")
+                ws['A1'] = "No reload data found"
+
+            # Create summary offload sheet (TODO)
+            ws_summary_offload = wb.create_sheet(title="summary offload")
+            ws_summary_offload['A1'] = "TODO: summary offload"
+
+            # Create summary reload sheet (TODO)
+            ws_summary_reload = wb.create_sheet(title="summary reload")
+            ws_summary_reload['A1'] = "TODO: summary reload"
+
+            # Remove default sheet if it exists
+            if 'Sheet' in wb.sheetnames:
+                wb.remove(wb['Sheet'])
+
+            wb.save(filename)
+            print(f"  Exported activation_offload_analysis_{pcie_suffix}.xlsx for device {device_id} (PCIe={pcie_bus}) to {filename}")
+
+    def _create_detail_sheet(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], operation_type: str):
+        """Create a detail sheet for offload or reload.
+
+        Each tensor occupies one row.
+        Columns: group, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s)
+        """
+        ws = wb.create_sheet(title=sheet_name)
+
+        # Headers
+        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
+                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+
+        row = 2
+        for group in groups:
+            is_first_row_of_group = True
+            for copy_info in group.copies:
+                # group column: only for first row of group
+                if is_first_row_of_group:
+                    ws.cell(row=row, column=1, value=group.group)
+                    is_first_row_of_group = False
+                else:
+                    ws.cell(row=row, column=1, value=None)  # Empty for subsequent rows
+
+                # shape
+                ws.cell(row=row, column=2, value=str(copy_info.shape))
+
+                # byte/element - use pre-calculated value from ActivationCopyInfo
+                ws.cell(row=row, column=3, value=copy_info.byte_per_element)
+
+                # size
+                ws.cell(row=row, column=4, value=copy_info.size_bytes)
+
+                # time(ms)
+                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
+                ws.cell(row=row, column=5, value=round(time_ms, 3))
+
+                # throughput(GiB/s)
+                ws.cell(row=row, column=6, value=round(copy_info.throughput_gibs, 4))
+
+                row += 1
+
+            # Add total row for this group (only once after all copies)
+            if group.copies:
+                ws.cell(row=row, column=7, value=group.total_size_bytes)
+                total_time_ms = sum((c.gpu_duration_ns or 0) for c in group.copies) / 1e6
+                ws.cell(row=row, column=8, value=round(total_time_ms, 3))
+                ws.cell(row=row, column=9, value=round(group.total_throughput_gibs, 4))
+                row += 1
+
+        # Auto-adjust column widths
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 25
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 12
+        ws.column_dimensions['F'].width = 18
+        ws.column_dimensions['G'].width = 15
+        ws.column_dimensions['H'].width = 15
+        ws.column_dimensions['I'].width = 22
+
+    def _create_detail_sheet_with_merge(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], iteration_num: int, pcie_bus: str):
+        """Create a detail sheet with merged group cells.
+
+        Format:
+        - Row 1: Title with device info
+        - Row 2: Headers (group, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s))
+        - Data rows: group name merged across all its copy rows
+        - Total row per group showing aggregated data
+        """
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+        else:
+            ws = wb.create_sheet(title=sheet_name)
+
+        # Row 1: Title - write to A1 only, don't merge
+        title = f"Activation {sheet_name.upper()} - Iteration {iteration_num} (GPU: {pcie_bus})"
+        title_cell = ws.cell(row=1, column=1, value=title)
+        title_cell.font = Font(bold=True, size=12)
+
+        # Row 2: Headers
+        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
+                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=2, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+
+        row = 3
+        merge_ranges = []  # Store merge ranges to apply after all data is written
+
+        for group in groups:
+            if not group.copies:
+                continue
+
+            group_start_row = row
+            group_total_duration_ns = 0
+
+            # Write each copy as a row
+            for copy_info in group.copies:
+                # shape
+                ws.cell(row=row, column=2, value=str(copy_info.shape))
+                # byte/element
+                ws.cell(row=row, column=3, value=copy_info.byte_per_element)
+                # size
+                ws.cell(row=row, column=4, value=copy_info.size_bytes)
+                # time(ms) - 3 decimal places
+                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
+                ws.cell(row=row, column=5, value=round(time_ms, 3))
+                # throughput(GiB/s) - 4 decimal places
+                ws.cell(row=row, column=6, value=round(copy_info.throughput_gibs, 4))
+
+                group_total_duration_ns += (copy_info.gpu_duration_ns or 0)
+                row += 1
+
+            group_end_row = row - 1
+
+            # Write group name to first row of the group
+            group_cell = ws.cell(row=group_start_row, column=1, value=group.group)
+            group_cell.alignment = Alignment(vertical='center')
+
+            # Record merge range if more than one row
+            if group_start_row < group_end_row:
+                merge_ranges.append((group_start_row, group_end_row))
+
+            # Total row for this group
+            ws.cell(row=row, column=7, value=group.total_size_bytes)
+            total_time_ms = group_total_duration_ns / 1e6
+            ws.cell(row=row, column=8, value=round(total_time_ms, 3))
+            ws.cell(row=row, column=9, value=round(group.total_throughput_gibs, 4))
+
+            row += 1
+
+        # Apply all merges after all data is written
+        for start_row, end_row in merge_ranges:
+            ws.merge_cells(start_row=start_row, start_column=1,
+                           end_row=end_row, end_column=1)
+
+        # Auto-adjust column widths
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 25
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 12
+        ws.column_dimensions['F'].width = 18
+        ws.column_dimensions['G'].width = 15
+        ws.column_dimensions['H'].width = 15
+        ws.column_dimensions['I'].width = 22
+
+    def export_summary_excel(self, iteration_num: int, output_dir: str):
+        """Export summary Excel with aggregated data and count column.
+
+        Summary offload: forward_step[0] offload data, aggregated by group name
+        Summary reload: backward_step[0] reload data, aggregated by group name
+        Each group has a count column showing how many groups of that name exist.
+        """
+        if not OPENPYXL_AVAILABLE:
+            print("openpyxl not available, skipping summary Excel export")
+            return
+
+        # Get offload groups from forward_step[0]
+        offload_groups, offload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
+        # Get reload groups from backward_step[0]
+        reload_groups, reload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
+
+        if not offload_groups and not reload_groups:
+            print(f"No offload/reload data found for iteration {iteration_num}")
+            return
+
+        # Organize by device
+        device_groups = {}
+        for group in offload_groups:
+            device_id = 0  # Default
+            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['offload'].append(group)
+        for group in reload_groups:
+            device_id = 0  # Default
+            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
+
+        # Create Excel file per device
+        for device_id, groups_data in device_groups.items():
+            device_info = self.devices.get(device_id)
+            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
+            pcie_suffix = pcie_bus.replace(":", "_")
+
+            device_dir = os.path.join(output_dir, pcie_suffix)
+            os.makedirs(device_dir, exist_ok=True)
+
+            filename = os.path.join(device_dir, "activation_summary.xlsx")
+            wb = Workbook()
+            has_sheets = False
+
+            # Process offload summary
+            if groups_data['offload']:
+                self._create_summary_sheet(wb, "summary-offload", groups_data['offload'], offload_counts, "offload")
+                has_sheets = True
+
+            # Process reload summary
+            if groups_data['reload']:
+                self._create_summary_sheet(wb, "summary-reload", groups_data['reload'], reload_counts, "reload")
+                has_sheets = True
+
+            # Remove default sheet if it exists and we have other sheets
+            if 'Sheet' in wb.sheetnames:
+                if has_sheets:
+                    wb.remove(wb['Sheet'])
+                else:
+                    ws = wb['Sheet']
+                    ws.title = "No Data"
+                    ws['A1'] = "No activation summary data found"
+
+            wb.save(filename)
+            print(f"  Exported activation_summary.xlsx for device {device_id} (PCIe={pcie_bus}) to {filename}")
+
+    def _create_summary_sheet(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], group_counts: Dict[str, int], operation_type: str):
+        """Create a summary sheet with aggregated data.
+
+        Aggregates data by group name, adds count column as second column.
+        Columns: group, count, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s)
+        """
+        ws = wb.create_sheet(title=sheet_name)
+
+        # Aggregate by group name
+        group_stats = defaultdict(lambda: {
+            'count': 0,
+            'copies': [],
+            'total_size': 0,
+            'total_duration_ns': 0
+        })
+
+        for group in groups:
+            stats = group_stats[group.group]
+            # Use the passed group_counts dict for actual count
+            stats['count'] = group_counts.get(group.group, 1)
+            stats['copies'].extend(group.copies)
+            stats['total_size'] += group.total_size_bytes
+            stats['total_duration_ns'] += sum((c.gpu_duration_ns or 0) for c in group.copies)
+
+        # Headers - count is now second column
+        headers = ['group', 'count', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
+                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+
+        row = 2
+        for group_name, stats in group_stats.items():
+            copies = stats['copies']
+            if not copies:
+                continue
+
+            # Calculate total throughput for aggregated data
+            total_throughput_gibs = 0.0
+            if stats['total_duration_ns'] > 0:
+                total_throughput_gibs = (stats['total_size'] / (1024**3)) / (stats['total_duration_ns'] / 1e9)
+
+            is_first_row_of_group = True
+            for copy_info in copies:
+                # group column - only on first row
+                if is_first_row_of_group:
+                    ws.cell(row=row, column=1, value=group_name)
+                    # count column - second column, as requested
+                    ws.cell(row=row, column=2, value=stats['count'])
+                    is_first_row_of_group = False
+                else:
+                    ws.cell(row=row, column=1, value=None)
+                    ws.cell(row=row, column=2, value=None)
+
+                # shape
+                ws.cell(row=row, column=3, value=str(copy_info.shape))
+
+                # byte/element - use pre-calculated value from ActivationCopyInfo
+                ws.cell(row=row, column=4, value=copy_info.byte_per_element)
+
+                # size
+                ws.cell(row=row, column=5, value=copy_info.size_bytes)
+
+                # time(ms)
+                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
+                ws.cell(row=row, column=6, value=round(time_ms, 3))
+
+                # throughput(GiB/s)
+                ws.cell(row=row, column=7, value=round(copy_info.throughput_gibs, 4))
+
+                row += 1
+
+            # Add aggregated total row for this group (after all copies)
+            ws.cell(row=row, column=8, value=stats['total_size'])
+            total_time_ms = stats['total_duration_ns'] / 1e6
+            ws.cell(row=row, column=9, value=round(total_time_ms, 3))
+            ws.cell(row=row, column=10, value=round(total_throughput_gibs, 4))
+            row += 1
+
+        # Auto-adjust column widths
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 8
+        ws.column_dimensions['C'].width = 25
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 12
+        ws.column_dimensions['G'].width = 18
+        ws.column_dimensions['H'].width = 15
+        ws.column_dimensions['I'].width = 15
+        ws.column_dimensions['J'].width = 22
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1736,6 +2633,7 @@ def main():
 Examples:
     python nsys_profile_analyzer.py --sqlite profile.sqlite --json profile.json --output ./output
     python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -i 16
+    python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output --rank 0 1
         """
     )
 
@@ -1747,6 +2645,8 @@ Examples:
                         help='Output directory for analysis results')
     parser.add_argument('--iteration', '-i', type=int, default=16,
                         help='Iteration number to analyze (default: 16)')
+    parser.add_argument('--rank', type=int, nargs='+', default=[0, 1, 2, 3],
+                        help='Device IDs to analyze (default: [0, 1, 2, 3])')
 
     args = parser.parse_args()
 
@@ -1768,9 +2668,10 @@ Examples:
     print(f"JSON file: {args.json}")
     print(f"Output directory: {args.output}")
     print(f"Iteration to analyze: {args.iteration}")
+    print(f"Ranks to analyze: {args.rank}")
     print(f"=" * 80)
 
-    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration)
+    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank)
     analyzer.run()
 
     print("\n" + "=" * 80)
