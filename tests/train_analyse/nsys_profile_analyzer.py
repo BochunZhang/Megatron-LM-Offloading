@@ -329,12 +329,14 @@ def calculate_tensor_bytes(sizes: List[List[int]], dtype_size: int = 4) -> int:
 # ============== 主分析器类 ==============
 
 class NSYSAnalyzer:
-    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16, rank: Optional[List[int]] = None):
+    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16,
+                 rank: Optional[List[int]] = None, detail: bool = False):
         self.json_filepath = json_filepath
         self.sqlite_filepath = sqlite_filepath
         self.output_dir = output_dir
         self.iteration = iteration
         self.rank = rank if rank is not None else [0, 1, 2, 3]  # 默认导出所有 device
+        self.detail = detail  # 是否导出详细的 step json
         self.devices: Dict[int, DeviceInfo] = {}  # key: cuda device id
         self.nvtx_events: List[NvtxEvent] = []
         self.cuda_events_by_sig_corr: Dict[int, Dict[int, CudaEvent]] = defaultdict(dict)
@@ -1761,10 +1763,12 @@ class NSYSAnalyzer:
 
         iteration = self.iteration
 
-        print("\n" + "=" * 80)
-        print(f"Exporting iteration {iteration} stream trees (all devices)")
-        print("=" * 80)
-        self.export_stream_trees(iteration, self.output_dir, streams)
+        # 只在启用 detail 模式时导出 stream trees (step 的详细 json)
+        if self.detail:
+            print("\n" + "=" * 80)
+            print(f"Exporting iteration {iteration} stream trees (all devices)")
+            print("=" * 80)
+            self.export_stream_trees(iteration, self.output_dir, streams)
 
         print("\n" + "=" * 80)
         print(f"Exporting iteration {iteration} summary.xlsx (all devices)")
@@ -2634,6 +2638,7 @@ Examples:
     python nsys_profile_analyzer.py --sqlite profile.sqlite --json profile.json --output ./output
     python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -i 16
     python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -r 0 1
+    python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output --detail
         """
     )
 
@@ -2647,6 +2652,8 @@ Examples:
                         help='Iteration number to analyze (default: 16)')
     parser.add_argument('--rank', '-r', type=int, nargs='+', default=[0, 1, 2, 3],
                         help='Device ranks to export (default: 0 1 2 3, export all devices)')
+    parser.add_argument('--detail', action='store_true',
+                        help='Export detailed step JSON files (default: False, only export xlsx)')
 
     args = parser.parse_args()
 
@@ -2669,9 +2676,10 @@ Examples:
     print(f"Output directory: {args.output}")
     print(f"Iteration to analyze: {args.iteration}")
     print(f"Ranks to export: {args.rank}")
+    print(f"Detail mode: {'enabled' if args.detail else 'disabled'}")
     print(f"=" * 80)
 
-    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank)
+    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank, args.detail)
     analyzer.run()
 
     print("\n" + "=" * 80)
