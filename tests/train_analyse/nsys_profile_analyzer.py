@@ -820,46 +820,82 @@ class NSYSAnalyzer:
         print("Step 6: Analyzing fine-grained offloading")
         print("=" * 80)
 
-        def _fine_grained_group(node: NvtxNode, offload_type: str, result: Dict[str, NvtxNode]):
-            """递归查找 activation offloading/reloading 节点，每个 group 只取第一个"""
+        def _collect_fine_grained_nodes(node: NvtxNode, offload_type: str, result: Dict[str, List[NvtxNode]]):
+            """递归收集所有 activation offloading/reloading 节点，按 group 名称分组"""
             if not node:
                 return
             for n in node.fast_children:
                 if n.fastpath and n.fastpath.startswith(f'fine_{offload_type}'):
                     group_name = n.name.split()[-1] if n.name else "unknown"
                     if group_name not in result:
-                        result[group_name] = n
-                    # 继续查找其他节点（同一 step 中可能有多个同名 group）
+                        result[group_name] = []
+                    result[group_name].append(n)
                     continue
                 else:
-                    _fine_grained_group(n, offload_type, result)
-   
+                    _collect_fine_grained_nodes(n, offload_type, result)
+
         for rank in self.target_ranks:
             fb = self.iterations[rank][self.target_iteration].search_for_fastpath('forward_step[0]')
             bb = self.iterations[rank][self.target_iteration].search_for_fastpath('backward_step[0]')
-            fg : Dict[str, List[NvtxNode]] = defaultdict(list)
-            bg : Dict[str, List[NvtxNode]] = defaultdict(list)
 
-            _fine_grained_group(fb, 'offload', fg)
-            _fine_grained_group(bb, 'reload', bg)
+            fg : Dict[str, List[NvtxNode]] = {}
+            bg : Dict[str, List[NvtxNode]] = {}
 
-            # 收集 offload 数据
-            offload_data = {}
-            for group_name, node in fg.items():
-                node.analyse_fine_grained_offloading()
-                offload_data[group_name] = node.memcpys
+            _collect_fine_grained_nodes(fb, 'offload', fg)
+            _collect_fine_grained_nodes(bb, 'reload', bg)
 
-            # 收集 reload 数据
-            reload_data = {}
-            for group_name, node in bg.items():
-                node.analyse_fine_grained_offloading()
-                reload_data[group_name] = node.memcpys
+            print(f"\nRank {rank}: Found {sum(len(v) for v in fg.values())} offload nodes ({len(fg)} groups), "
+                  f"{sum(len(v) for v in bg.values())} reload nodes ({len(bg)} groups)")
 
-            # 生成 Excel 表格
-            self._generate_fine_grained_excel(offload_data, reload_data, rank)
+            # 收集数据并计算每个节点的 memcpys
+            offload_all_data = {}
+            for group_name, nodes in fg.items():
+                offload_all_data[group_name] = nodes
+                for node in nodes:
+                    node.analyse_fine_grained_offloading()
+
+            reload_all_data = {}
+            for group_name, nodes in bg.items():
+                reload_all_data[group_name] = nodes
+                for node in nodes:
+                    node.analyse_fine_grained_offloading()
+
+            # 计算汇总统计
+            offload_summary = self._calculate_group_summary(offload_all_data)
+            reload_summary = self._calculate_group_summary(reload_all_data)
+
+            # 生成 Excel
+            self._generate_fine_grained_excel(offload_all_data, reload_all_data, offload_summary, reload_summary, rank)
+
+    def _calculate_group_summary(self, all_data: Dict[str, List[NvtxNode]]) -> Dict[str, Dict]:
+        """计算同名 group 的汇总统计"""
+        summary = {}
+        for group_name, nodes in all_data.items():
+            all_memcpy_sizes = []
+            all_memcpy_times = []
+
+            for node in nodes:
+                if hasattr(node, 'memcpys') and node.memcpys:
+                    for memcpy in node.memcpys:
+                        all_memcpy_sizes.append(memcpy['size'])
+                        all_memcpy_times.append(memcpy['time_ms'])
+
+            if all_memcpy_sizes:
+                total_size = sum(all_memcpy_sizes)
+                total_time_ms = sum(all_memcpy_times)
+                avg_throughput = (total_size / (1024**3)) / (total_time_ms / 1e3) if total_time_ms > 0 else 0
+
+                summary[group_name] = {
+                    'count': len(nodes),
+                    'total_size': total_size,
+                    'total_time_ms': total_time_ms,
+                    'avg_throughput': avg_throughput
+                }
+
+        return summary
 
 
-    def _generate_fine_grained_excel(self, offload_data: Dict[str, List[Dict]], reload_data: Dict[str, List[Dict]], rank: int):
+    def _generate_fine_grained_excel(self, offload_all_data: Dict[str, List[NvtxNode]], reload_all_data: Dict[str, List[NvtxNode]], offload_summary: Dict, reload_summary: Dict, rank: int):
         """生成 fine_grained_offload_analyse.xlsx"""
         if not OPENPYXL_AVAILABLE:
             print("Warning: openpyxl not available, skipping Excel generation")
@@ -877,23 +913,26 @@ class NSYSAnalyzer:
 
         wb = Workbook()
 
+        # 创建 summary sheet（放在第一个）
+        ws_summary = wb.active
+        ws_summary.title = "summary"
+        self._fill_summary_sheet(ws_summary, offload_summary, reload_summary)
+
         # 创建 offloading sheet
-        ws_offload = wb.active
-        ws_offload.title = "offloading"
-        self._fill_fine_grained_sheet(ws_offload, offload_data, "Fine-Grained Offloading")
+        ws_offload = wb.create_sheet(title="offloading")
+        self._fill_fine_grained_detail_sheet(ws_offload, offload_all_data, "Fine-Grained Offloading")
 
         # 创建 reloading sheet
         ws_reload = wb.create_sheet(title="reloading")
-        self._fill_fine_grained_sheet(ws_reload, reload_data, "Fine-Grained Reloading")
+        self._fill_fine_grained_detail_sheet(ws_reload, reload_all_data, "Fine-Grained Reloading")
 
         wb.save(output_path)
         print(f"\nFine-grained offload analysis saved to: {output_path}")
 
-    def _fill_fine_grained_sheet(self, ws, data: Dict[str, List[Dict]], title: str):
-        """填充 fine-grained sheet 数据"""
+    def _fill_summary_sheet(self, ws, offload_summary: Dict, reload_summary: Dict):
+        """填充 summary sheet - 同名 group 汇总统计"""
         # Header row
-        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
-                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
+        headers = ['type', 'group', 'count', 'total_size', 'total_time(ms)', 'avg_throughput(GiB/s)']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = Font(bold=True)
@@ -901,19 +940,82 @@ class NSYSAnalyzer:
             cell.font = Font(bold=True, color='FFFFFF')
 
         row = 2
-        for group_name, memcpys in data.items():
-            if not memcpys:
+
+        # 写入 offload 汇总数据
+        offload_start_row = row
+        for group_name, stats in offload_summary.items():
+            ws.cell(row=row, column=1, value='offload')
+            ws.cell(row=row, column=2, value=group_name)
+            ws.cell(row=row, column=3, value=stats['count'])
+            ws.cell(row=row, column=4, value=stats['total_size'])
+            ws.cell(row=row, column=5, value=round(stats['total_time_ms'], 3))
+            ws.cell(row=row, column=6, value=round(stats['avg_throughput'], 4))
+            row += 1
+
+        # 合并 offload 的 type 列
+        if offload_summary and len(offload_summary) > 1:
+            ws.merge_cells(start_row=offload_start_row, start_column=1,
+                          end_row=offload_start_row + len(offload_summary) - 1, end_column=1)
+        if offload_summary:
+            ws.cell(row=offload_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+
+        # 写入 reload 汇总数据
+        reload_start_row = row
+        for group_name, stats in reload_summary.items():
+            ws.cell(row=row, column=1, value='reload')
+            ws.cell(row=row, column=2, value=group_name)
+            ws.cell(row=row, column=3, value=stats['count'])
+            ws.cell(row=row, column=4, value=stats['total_size'])
+            ws.cell(row=row, column=5, value=round(stats['total_time_ms'], 3))
+            ws.cell(row=row, column=6, value=round(stats['avg_throughput'], 4))
+            row += 1
+
+        # 合并 reload 的 type 列
+        if reload_summary and len(reload_summary) > 1:
+            ws.merge_cells(start_row=reload_start_row, start_column=1,
+                          end_row=reload_start_row + len(reload_summary) - 1, end_column=1)
+        if reload_summary:
+            ws.cell(row=reload_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+
+        # 调整列宽
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 10
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 18
+        ws.column_dimensions['F'].width = 22
+
+    def _fill_fine_grained_detail_sheet(self, ws, all_data: Dict[str, List[NvtxNode]], title: str):
+        """填充 fine-grained detail sheet - 只显示每个同名 group 的第一组数据"""
+        # Header row
+        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
+                   'total_size', 'total_time(ms)', 'average_throughput(GiB/s)']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+
+        row = 2
+        for group_name, nodes in all_data.items():
+            if not nodes:
                 continue
 
-            # 计算 group 总计
+            # 只取第一个节点的数据
+            first_node = nodes[0]
+            if not hasattr(first_node, 'memcpys') or not first_node.memcpys:
+                continue
+
+            memcpys = first_node.memcpys
+
+            # 计算 group 总计（基于第一组数据）
             total_size = sum(m['size'] for m in memcpys)
             total_time_ms = sum(m['time_ms'] for m in memcpys)
             total_throughput = (total_size / (1024**3)) / (total_time_ms / 1e3) if total_time_ms > 0 else 0
 
-            # 写入每个 copy 操作
+            # 写入每个 copy 操作（仅第一组）
             group_start_row = row
             for idx, memcpy in enumerate(memcpys):
-                # group 列只在第一行显示，后续合并
                 if idx == 0:
                     ws.cell(row=row, column=1, value=group_name)
                 ws.cell(row=row, column=2, value=memcpy['shape'])
@@ -922,7 +1024,6 @@ class NSYSAnalyzer:
                 ws.cell(row=row, column=5, value=round(memcpy['time_ms'], 3))
                 ws.cell(row=row, column=6, value=round(memcpy['throughput_gib_s'], 4))
 
-                # 总计列只在第一行显示
                 if idx == 0:
                     ws.cell(row=row, column=7, value=total_size)
                     ws.cell(row=row, column=8, value=round(total_time_ms, 3))
@@ -930,11 +1031,16 @@ class NSYSAnalyzer:
 
                 row += 1
 
-            # 合并 group 列的单元格
+            # 合并单元格
             if len(memcpys) > 1:
                 ws.merge_cells(start_row=group_start_row, start_column=1,
                               end_row=group_start_row + len(memcpys) - 1, end_column=1)
-            # 设置左对齐
+                ws.merge_cells(start_row=group_start_row, start_column=7,
+                              end_row=group_start_row + len(memcpys) - 1, end_column=7)
+                ws.merge_cells(start_row=group_start_row, start_column=8,
+                              end_row=group_start_row + len(memcpys) - 1, end_column=8)
+                ws.merge_cells(start_row=group_start_row, start_column=9,
+                              end_row=group_start_row + len(memcpys) - 1, end_column=9)
             ws.cell(row=group_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
 
         # 调整列宽
