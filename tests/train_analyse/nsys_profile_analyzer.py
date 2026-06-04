@@ -213,6 +213,7 @@ class NvtxNode(BaseNode):
         """
         通过 fastpath查找指定 iteration 下的 target 节点
         """
+        print(self.name)
         if getattr(self, self.fastpath) == target:
             return self
         else:
@@ -260,7 +261,7 @@ class NvtxNode(BaseNode):
         self.fastpath = None
 
     def set_fastpath(self, parent = None):
-        if parent is not None and parent.fastpath is not None:
+        if parent is not None and self.fastpath is not None:
             self.fast_parent = parent
             parent.fast_children.append(self)
         
@@ -292,12 +293,12 @@ class NvtxNode(BaseNode):
         if self.fastpath == 'iteration':
             result = {}
             for child in self.fast_children:
-                name, time = child.analyse_step_gpu_time()
+                name, timeline = child.analyse_step_gpu_time()
                 if name is not None:
-                    result[name] = time
+                    result[name] = timeline
             return result
         elif self.fastpath == 'step':
-                return self.step, self.gpu_time
+                return self.step, self.timeline
         return None, None
     
     def analyse_fine_grained_offloading(self):
@@ -578,21 +579,16 @@ class NSYSAnalyzer:
         print("Step 5: Analyzing step GPU execution times")
         print("=" * 80)
 
-        # 收集数据: {step_name: {stream_id: TimeRange}}
-        steps_data = {}
-
         for rank in self.target_ranks:
             for it, node in self.iterations[rank].items():
                 if it == self.target_iteration:
-                    # 获取所有 step 节点
-                    for child in node.fast_children:
-                        if child.fastpath == 'step':
-                            step_name = child.step
-                            steps_data[step_name] = child.timeline
-                            print(f"Step {step_name}: {child.gpu_time}")
+                    steps_data = node.analyse_step_gpu_time()
+                    print(f"Found {len(steps_data)} steps")
+                    for step_name, timeline in steps_data.items():
+                        print(f"Step {step_name}: {len(timeline)} streams")
 
-        # 生成 Excel 表格
-        self._generate_step_analyse_xlsx(steps_data)
+                    # 生成 Excel 表格
+                    self._generate_step_analyse_xlsx(steps_data)
 
     def _generate_step_analyse_xlsx(self, steps_data: dict):
         """生成 step_analyse.xlsx 表格"""
