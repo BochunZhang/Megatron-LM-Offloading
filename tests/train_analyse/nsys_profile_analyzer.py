@@ -335,11 +335,11 @@ class NvtxNode(BaseNode):
         return None, None
     
     def analyse_fine_grained_offloading(self):
+        """分析细粒度 offload 操作，返回 copy 操作列表"""
         assert self.fastpath.startswith('fine_')
 
         def _extract_sizes_from_text(text: str) -> List[List[int]]:
             """Extract sizes array from text, handling nested arrays properly."""
-            # "aten::copy_, op_id = 15, sizes = [[2, 4096], [2, 4096], []], input_op_ids = [(14,0), (0,-1), (0,-1)]"
             match = re.search(r'sizes\s*=\s*(\[[\[\]\d,\s]+\])', text)
             if match:
                 try:
@@ -348,31 +348,54 @@ class NvtxNode(BaseNode):
                 except:
                     pass
             return []
-        
-        result: list[MemcpyEvent] = defaultdict()
-        for child in self.fast_children:
-            if child.name.startswith('aten::copy_'):
+
+        # 获取 group name (activation offloading/reloading 后的最后一个词)
+        self.group_name = self.name.split()[-1] if self.name else "unknown"
+
+        # 收集所有 copy_ 子节点
+        result = []
+        for child in self.children:
+            if isinstance(child, NvtxNode) and 'aten::copy_' in child.name:
                 sizes = _extract_sizes_from_text(child.name)
-                numel = 1
+                # 计算总元素数 - 取第一个非空尺寸
+                first_shape = None
                 for s in sizes:
-                    numel *= s[0]
-                child.shape = sizes
-                
+                    if s:
+                        first_shape = s
+                        break
+
+                # 计算元素数：对所有维度求积
+                numel = 1
+                if first_shape:
+                    for dim in first_shape:
+                        numel *= dim
+
+                # 查找 copy_ 子节点的 CudaNode
                 for c in child.children:
-                    if getattr(c.event.cudaEvent, 'memcpy', None) is not None:
-                        memcpy = c.event.cudaEvent.memcpy
-                        memcpy.numel = numel
-                        memcpy.time = TimeRange(c.event.CudaEvent.startNs, c.event.CudaEvent.endNs).durationNs
-                        memcpy.bytePerEle = memcpy.sizebytes / numel
-                        memcpy.throughput = memcpy.sizebytes / (memcpy.time.durationNs * 1e-9)
-                        result.append(memcpy)
-        # summary = {
-        #     'size': sum([m.sizebytes for m in result]),
-        #     'duration': sum([m.time.durationNs for m in result]),
-        #     # 'duration': result[-1].time.endNs - result[0].time.startNs
-        # }
-        # summary['throughput'] = summary['size'] / (summary['duration'] * 1e-9)
+                    if isinstance(c, CudaNode) and c.timeline:
+                        # 获取 memcpy 信息 - 需要从 cudaEvent 获取
+                        cuda_event = getattr(c.event, 'cudaEvent', None)
+                        if cuda_event and hasattr(cuda_event, 'memcpy') and cuda_event.memcpy:
+                            memcpy = cuda_event.memcpy
+                            time_range = list(c.timeline.values())[0] if c.timeline else None
+                            if time_range:
+                                duration_ms = time_range.durationNs / 1e6
+                                throughput_gib = (memcpy.sizebytes / (1024**3)) / (time_range.durationNs / 1e9) if time_range.durationNs > 0 else 0
+                                # 格式化 shape
+                                shape_str = str(first_shape) if first_shape else str(sizes)
+                                # byte_per_element
+                                byte_per_ele = memcpy.sizebytes / numel if numel > 0 else 0
+
+                                result.append({
+                                    'shape': shape_str,
+                                    'byte_per_element': byte_per_ele,
+                                    'size': memcpy.sizebytes,
+                                    'time_ms': round(duration_ms, 3),
+                                    'throughput_gib_s': round(throughput_gib, 4),
+                                })
+
         self.memcpys = result
+        return result
 
 
 class CudaNode(BaseNode):
@@ -797,13 +820,19 @@ class NSYSAnalyzer:
         print("Step 6: Analyzing fine-grained offloading")
         print("=" * 80)
 
-        def _fine_grained_group(node: NvtxNode, offload: str, result: Dict[str, List[NvtxNode]]):
+        def _fine_grained_group(node: NvtxNode, offload_type: str, result: Dict[str, NvtxNode]):
+            """递归查找 activation offloading/reloading 节点，每个 group 只取第一个"""
+            if not node:
+                return
             for n in node.fast_children:
-                if n.fastpath == f'fine_{offload}':
-                    result[n.fastpath].append(n)
-                    return
+                if n.fastpath and n.fastpath.startswith(f'fine_{offload_type}'):
+                    group_name = n.name.split()[-1] if n.name else "unknown"
+                    if group_name not in result:
+                        result[group_name] = n
+                    # 继续查找其他节点（同一 step 中可能有多个同名 group）
+                    continue
                 else:
-                    _fine_grained_group(n, offload, result)
+                    _fine_grained_group(n, offload_type, result)
    
         for rank in self.target_ranks:
             fb = self.iterations[rank][self.target_iteration].search_for_fastpath('forward_step[0]')
@@ -814,40 +843,104 @@ class NSYSAnalyzer:
             _fine_grained_group(fb, 'offload', fg)
             _fine_grained_group(bb, 'reload', bg)
 
-            offload : Dict[str, List[MemcpyEvent]] = defaultdict(list)
-            for key, group in fg.items():
-                for node in group:
-                    node.analyse_fine_grained_offloading()
-                offload[key] = group[0].memcpys
-            
-            offload_summary = {
-                key: {
-                    'size': sum([m.sizebytes for m in group[0].memcpys]),
-                    'duration': sum([m.time.durationNs for m in group[0].memcpys]),
-                }
-                for key, group in fg.items()
-                # 'duration': result[-1].time.endNs - result[0].time.startNs
-            }
-            for key, dict in offload_summary.items():
-                dict[key]['throughput'] = dict['size'] / (dict['duration'] * 1e-9)
+            # 收集 offload 数据
+            offload_data = {}
+            for group_name, node in fg.items():
+                node.analyse_fine_grained_offloading()
+                offload_data[group_name] = node.memcpys
 
-            reload : Dict[str, List[MemcpyEvent]] = defaultdict(list)
-            for key, group in bg.items():
-                for node in group:
-                    node.analyse_fine_grained_offloading()
-                reload[key] = group[0].memcpys
-            reload_summary = {
-                key: {
-                    'size': sum([m.sizebytes for m in group[0].memcpys]),
-                    'duration': sum([m.time.durationNs for m in group[0].memcpys]),
-                }
-                for key, group in bg.items()
-                # 'duration': result[-1].time.endNs - result[0].time.startNs
-            }
-            for key, dict in reload_summary.items():
-                dict[key]['throughput'] = dict['size'] / (dict['duration'] * 1e-9)
+            # 收集 reload 数据
+            reload_data = {}
+            for group_name, node in bg.items():
+                node.analyse_fine_grained_offloading()
+                reload_data[group_name] = node.memcpys
 
-            # 制表...
+            # 生成 Excel 表格
+            self._generate_fine_grained_excel(offload_data, reload_data, rank)
+
+
+    def _generate_fine_grained_excel(self, offload_data: Dict[str, List[Dict]], reload_data: Dict[str, List[Dict]], rank: int):
+        """生成 fine_grained_offload_analyse.xlsx"""
+        if not OPENPYXL_AVAILABLE:
+            print("Warning: openpyxl not available, skipping Excel generation")
+            return
+
+        # 获取 pcie_bus
+        device_info = self.devices.get(rank)
+        if device_info and device_info.pcieBus:
+            pcie_bus = device_info.pcieBus.replace(":", "_")
+        else:
+            pcie_bus = f"device_{rank}"
+
+        output_path = os.path.join(self.output_dir, pcie_bus, "fine_grained_offload_analyse.xlsx")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        wb = Workbook()
+
+        # 创建 offloading sheet
+        ws_offload = wb.active
+        ws_offload.title = "offloading"
+        self._fill_fine_grained_sheet(ws_offload, offload_data, "Fine-Grained Offloading")
+
+        # 创建 reloading sheet
+        ws_reload = wb.create_sheet(title="reloading")
+        self._fill_fine_grained_sheet(ws_reload, reload_data, "Fine-Grained Reloading")
+
+        wb.save(output_path)
+        print(f"\nFine-grained offload analysis saved to: {output_path}")
+
+    def _fill_fine_grained_sheet(self, ws, data: Dict[str, List[Dict]], title: str):
+        """填充 fine-grained sheet 数据"""
+        # Header row
+        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
+                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            cell.font = Font(bold=True, color='FFFFFF')
+
+        row = 2
+        for group_name, memcpys in data.items():
+            if not memcpys:
+                continue
+
+            # 计算 group 总计
+            total_size = sum(m['size'] for m in memcpys)
+            total_time_ms = sum(m['time_ms'] for m in memcpys)
+            total_throughput = (total_size / (1024**3)) / (total_time_ms / 1e3) if total_time_ms > 0 else 0
+
+            # 写入每个 copy 操作
+            group_start_row = row
+            for idx, memcpy in enumerate(memcpys):
+                # group 列只在第一行显示，后续合并
+                if idx == 0:
+                    ws.cell(row=row, column=1, value=group_name)
+                ws.cell(row=row, column=2, value=memcpy['shape'])
+                ws.cell(row=row, column=3, value=memcpy['byte_per_element'])
+                ws.cell(row=row, column=4, value=memcpy['size'])
+                ws.cell(row=row, column=5, value=round(memcpy['time_ms'], 3))
+                ws.cell(row=row, column=6, value=round(memcpy['throughput_gib_s'], 4))
+
+                # 总计列只在第一行显示
+                if idx == 0:
+                    ws.cell(row=row, column=7, value=total_size)
+                    ws.cell(row=row, column=8, value=round(total_time_ms, 3))
+                    ws.cell(row=row, column=9, value=round(total_throughput, 4))
+
+                row += 1
+
+            # 合并 group 列的单元格
+            if len(memcpys) > 1:
+                ws.merge_cells(start_row=group_start_row, start_column=1,
+                              end_row=group_start_row + len(memcpys) - 1, end_column=1)
+            # 设置左对齐
+            ws.cell(row=group_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+
+        # 调整列宽
+        ws.column_dimensions['A'].width = 20
+        for c in range(2, 10):
+            ws.column_dimensions[chr(64 + c)].width = 18
 
 
     # 关注的 stream 列表
@@ -1069,7 +1162,7 @@ class NSYSAnalyzer:
         self.export_stream_trees(streams)
 
         self.analyze_steps()
-        # self.analyze_fine_grained_offloading()
+        self.analyze_fine_grained_offloading()
 
 def main():
     parser = argparse.ArgumentParser(
