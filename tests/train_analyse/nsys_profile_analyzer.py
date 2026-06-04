@@ -22,7 +22,7 @@ from copy import deepcopy
 
 try:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, PatternFill, Alignment
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
@@ -117,7 +117,7 @@ class TraceProcessEvent(BaseEvent):
         self.signature = (self.globalTid >> 24) & 0xFFFFFF 
         self.thread = "main" if (self.globalTid & 0xFFFFFF) == self.signature else "autograd"
 
-@dataclass 
+@dataclass
 class CudaEvent(BaseEvent):
     correlationId: int
     deviceId: int
@@ -131,6 +131,7 @@ class CudaEvent(BaseEvent):
     memcpy: Optional['MemcpyEvent'] = None
     sync: Optional['SyncSrcEvent'] = None
     cudaEventRecord: Optional['SyncDstEvent'] = None
+    isSync: bool = False  # 是否为同步事件 (cudaStreamWaitEvent 等)
 
     @classmethod
     def from_dict(cls, data: dict, **kwargs: Any):
@@ -152,6 +153,7 @@ class CudaEvent(BaseEvent):
             self.memcpy = MemcpyEvent.from_dict(self.memcpy)
         elif self.sync is not None:
             self.sync = SyncSrcEvent.from_dict(self.sync)
+            self.isSync = True  # 标记为同步事件
         elif self.cudaEventRecord is not None:
             self.cudaEventRecord = SyncDstEvent.from_dict(self.cudaEventRecord)
 
@@ -300,7 +302,36 @@ class NvtxNode(BaseNode):
                     result[name] = timeline
             return result
         elif self.fastpath == 'step':
-                return self.step, self.timeline
+            # 基于过滤后的数据计算 timeline
+            # 遍历所有子节点，收集非 sync 的 CudaNode
+            filtered_timeline = {}
+
+            def collect_cuda_timeline(node: BaseNode):
+                if isinstance(node, CudaNode):
+                    # 过滤同步事件
+                    if not node.isSync:
+                        for stream_id, time_range in node.timeline.items():
+                            if time_range:
+                                if stream_id not in filtered_timeline:
+                                    filtered_timeline[stream_id] = []
+                                filtered_timeline[stream_id].append(time_range)
+                elif isinstance(node, NvtxNode):
+                    for child in node.children:
+                        collect_cuda_timeline(child)
+
+            # 收集所有子节点的 timeline
+            for child in self.children:
+                collect_cuda_timeline(child)
+
+            # 合并每个 stream 的时间范围
+            result_timeline = {}
+            for stream_id, time_ranges in filtered_timeline.items():
+                if time_ranges:
+                    starts = [tr.startNs for tr in time_ranges]
+                    ends = [tr.endNs for tr in time_ranges]
+                    result_timeline[stream_id] = TimeRange(min(starts), max(ends))
+
+            return self.step, result_timeline
         return None, None
     
     def analyse_fine_grained_offloading(self):
@@ -348,10 +379,13 @@ class CudaNode(BaseNode):
     def __init__(self, event: TraceProcessEvent):
         super().__init__(event)
         self.name = event.name
+        self.isSync = False  # 是否为同步事件
 
         if getattr(event, 'cudaEvent', None) is not None:
             cuda_event : CudaEvent = event.cudaEvent
-            if cuda_event.startNs != 0 and cuda_event.endNs != 0:
+            self.isSync = cuda_event.isSync  # 从 CudaEvent 获取 isSync
+            # 过滤同步事件，不添加到 timeline
+            if not self.isSync and cuda_event.startNs != 0 and cuda_event.endNs != 0:
                 self.gpu_time = TimeRange(cuda_event.startNs, cuda_event.endNs)
                 self.timeline[cuda_event.streamId] = self.gpu_time
     
@@ -638,12 +672,6 @@ class NSYSAnalyzer:
 
         header_font = Font(bold=True, color='FFFFFF')
         field_font = Font(bold=True)
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
         center_align = Alignment(horizontal='center', vertical='center')
 
         # 计算总列数
@@ -662,7 +690,6 @@ class NSYSAnalyzer:
         ws.cell(row=2, column=1).fill = step_name_fill
         ws.cell(row=2, column=1).alignment = center_align
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=1)
-        ws.cell(row=2, column=1).border = thin_border
 
         col = 2
         # GPU Total header
@@ -671,8 +698,6 @@ class NSYSAnalyzer:
         ws.cell(row=2, column=col).fill = gpu_total_fill
         ws.cell(row=2, column=col).alignment = center_align
         ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
-        for c in range(col, col + 3):
-            ws.cell(row=2, column=c).border = thin_border
         col += 3
 
         # Stream headers
@@ -686,8 +711,6 @@ class NSYSAnalyzer:
                 ws.cell(row=2, column=col).fill = other_stream_fill
             ws.cell(row=2, column=col).alignment = center_align
             ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
-            for c in range(col, col + 3):
-                ws.cell(row=2, column=c).border = thin_border
             col += 3
 
         # Row 3: Field headers (start_ns, end_ns, duration_ns)
@@ -696,7 +719,6 @@ class NSYSAnalyzer:
         ws.cell(row=3, column=col).font = field_font
         ws.cell(row=3, column=col).fill = field_fill
         ws.cell(row=3, column=col).alignment = center_align
-        ws.cell(row=3, column=col).border = thin_border
         col += 1
 
         for _ in range(len(ordered_streams) + 1):  # +1 for GPU Total
@@ -705,7 +727,6 @@ class NSYSAnalyzer:
                 cell.font = field_font
                 cell.fill = field_fill
                 cell.alignment = center_align
-                cell.border = thin_border
                 col += 1
 
         # 数据行 (从第4行开始)
@@ -716,7 +737,6 @@ class NSYSAnalyzer:
             # step name
             ws.cell(row=row, column=1, value=step_name)
             ws.cell(row=row, column=1).alignment = center_align
-            ws.cell(row=row, column=1).border = thin_border
 
             # 计算 GPU Total (所有 streams 的并集时间范围)
             if timeline:
@@ -733,7 +753,6 @@ class NSYSAnalyzer:
             ws.cell(row=row, column=col + 2, value=all_duration)
             for i in range(3):
                 ws.cell(row=row, column=col + i).alignment = center_align
-                ws.cell(row=row, column=col + i).border = thin_border
             col += 3
 
             # 各个 Stream 数据
@@ -749,7 +768,6 @@ class NSYSAnalyzer:
                     ws.cell(row=row, column=col + 2, value="")
                 for i in range(3):
                     ws.cell(row=row, column=col + i).alignment = center_align
-                    ws.cell(row=row, column=col + i).border = thin_border
                 col += 3
 
             row += 1
@@ -832,11 +850,224 @@ class NSYSAnalyzer:
             # 制表...
 
 
+    # 关注的 stream 列表
+    TARGET_STREAMS = {7, 47, 43, 59, 170, 172, 171, 169, 31, 35}
+
+    def calculate_stream_gpu_time(self):
+        """计算每个 NvtxNode 在指定 stream 上的 GPU 执行时间"""
+        print("\n" + "=" * 80)
+        print("Calculating stream GPU time for NvtxNodes (target streams only)")
+        print("=" * 80)
+
+        all_streams = set()
+
+        for rank in self.target_ranks:
+            for it, node in self.iterations[rank].items():
+                if it == self.target_iteration:
+                    # 递归遍历所有节点
+                    self._calculate_node_stream_time(node, all_streams)
+
+        print(f"Found {len(all_streams)} target streams")
+        print(f"Streams: {sorted(all_streams)}")
+        return sorted(all_streams)
+
+    def _calculate_node_stream_time(self, node: NvtxNode, all_streams: Set[int]):
+        """递归计算节点的 stream GPU 时间"""
+        # 收集该节点下的所有 CudaNode（过滤掉 sync event）
+        cuda_nodes = []
+
+        def collect_cuda(n: BaseNode):
+            if isinstance(n, CudaNode):
+                # 过滤同步事件（如 cudaStreamWaitEvent）
+                if not n.isSync:
+                    cuda_nodes.append(n)
+            elif isinstance(n, NvtxNode):
+                for child in n.children:
+                    collect_cuda(child)
+
+        for child in node.children:
+            collect_cuda(child)
+
+        # 按 stream 分组
+        stream_events: Dict[int, List[CudaNode]] = defaultdict(list)
+        for cuda_node in cuda_nodes:
+            for stream_id, time_range in cuda_node.timeline.items():
+                if stream_id in self.TARGET_STREAMS and time_range:
+                    stream_events[stream_id].append(cuda_node)
+                    all_streams.add(stream_id)
+
+        # 计算每个 stream 上的 GPU 时间范围
+        for stream_id, events in stream_events.items():
+            gpu_starts = [n.timeline[stream_id].startNs for n in events if stream_id in n.timeline]
+            gpu_ends = [n.timeline[stream_id].endNs for n in events if stream_id in n.timeline]
+            if gpu_starts and gpu_ends:
+                if stream_id not in node.timeline:
+                    node.timeline[stream_id] = TimeRange(min(gpu_starts), max(gpu_ends))
+
+        # 递归处理子节点
+        for child in node.fast_children:
+            self._calculate_node_stream_time(child, all_streams)
+
+    def build_stream_trees(self, streams: List[int]):
+        """为每个 stream 构建树形结构"""
+        print("\n" + "=" * 80)
+        print("Building stream-level trees")
+        print("=" * 80)
+
+        for rank in self.target_ranks:
+            for it, node in self.iterations[rank].items():
+                if it == self.target_iteration:
+                    for stream_id in streams:
+                        self._build_stream_tree_for_node(node, stream_id)
+
+    def _build_stream_tree_for_node(self, node: NvtxNode, stream_id: int):
+        """为单个节点构建单个 stream 的树"""
+        # 收集在该 stream 上有 GPU 时间的子节点（过滤掉 sync event）
+        children_on_stream = []
+
+        for child in node.children:
+            if isinstance(child, CudaNode):
+                # 过滤同步事件
+                if child.isSync:
+                    continue
+                if stream_id in child.timeline and child.timeline[stream_id]:
+                    children_on_stream.append(child)
+            elif isinstance(child, NvtxNode):
+                # 递归检查子节点
+                self._build_stream_tree_for_node(child, stream_id)
+                # 如果子节点或其子孙在该 stream 上有执行，则加入
+                if stream_id in child.timeline and child.timeline[stream_id]:
+                    children_on_stream.append(child)
+
+        # 按 GPU 开始时间排序
+        children_on_stream.sort(key=lambda n: n.timeline[stream_id].startNs if stream_id in n.timeline and n.timeline[stream_id] else 0)
+
+        # 保存为该节点的 stream_children
+        if children_on_stream:
+            if stream_id not in node.stream_children:
+                node.stream_children[stream_id] = []
+            node.stream_children[stream_id] = children_on_stream
+
+    def export_stream_trees(self, streams: List[int]):
+        """导出指定 iteration 的 step 在每个 stream 上的树"""
+        print("\n" + "=" * 80)
+        print(f"Exporting stream trees for iteration {self.target_iteration}")
+        print("=" * 80)
+
+        for rank in self.target_ranks:
+            # 获取 pcie_bus
+            device_info = self.devices.get(rank)
+            if device_info and device_info.pcieBus:
+                pcie_bus = device_info.pcieBus.replace(":", "_")
+            else:
+                pcie_bus = f"device_{rank}"
+
+            for it, node in self.iterations[rank].items():
+                if it == self.target_iteration:
+                    # 找到所有 step 节点
+                    for child in node.fast_children:
+                        if child.fastpath == 'step':
+                            step_name = child.step
+                            self._export_step_stream_trees(child, pcie_bus, step_name, streams)
+
+    def _export_step_stream_trees(self, step_node: NvtxNode, pcie_bus: str, step_name: str, streams: List[int]):
+        """导出单个 step 的所有 stream trees"""
+        # 创建目录
+        step_dir = os.path.join(self.output_dir, pcie_bus, step_name)
+        os.makedirs(step_dir, exist_ok=True)
+
+        for stream_id in streams:
+            if stream_id in step_node.stream_children:
+                self._export_stream_tree_json(step_node, stream_id, step_dir, step_name)
+
+    def _export_stream_tree_json(self, node: NvtxNode, stream_id: int, step_dir: str, step_name: str):
+        """导出单个 stream 的树到 JSON"""
+        filename = os.path.join(step_dir, f"stream_{stream_id}.json")
+
+        def build_stream_tree(n: BaseNode) -> Optional[Dict]:
+            """递归构建 stream 树"""
+            if isinstance(n, CudaNode):
+                # CudaNode: 只保留在该 stream 上执行的
+                if stream_id not in n.timeline or not n.timeline[stream_id]:
+                    return None
+                # 过滤同步事件（如 cudaStreamWaitEvent）
+                if n.isSync:
+                    return None
+
+                tr = n.timeline[stream_id]
+                return {
+                    "type": "CudaNode",
+                    "name": n.name,
+                    "stream_id": stream_id,
+                    "stream_start_ns": tr.startNs,
+                    "stream_end_ns": tr.endNs,
+                    "stream_duration_ns": tr.durationNs,
+                }
+            elif isinstance(n, NvtxNode):
+                # NvtxNode: 递归收集子节点在该 stream 上的执行
+                stream_children = []
+
+                for child in n.children:
+                    child_result = build_stream_tree(child)
+                    if child_result is not None:
+                        stream_children.append(child_result)
+
+                if stream_children:
+                    # 有子节点在该 stream 上执行
+                    child_starts = [c.get("stream_start_ns") for c in stream_children if c.get("stream_start_ns") is not None]
+                    child_ends = [c.get("stream_end_ns") for c in stream_children if c.get("stream_end_ns") is not None]
+
+                    if child_starts and child_ends:
+                        stream_start = min(child_starts)
+                        stream_end = max(child_ends)
+                        stream_duration = stream_end - stream_start
+                    else:
+                        stream_start = None
+                        stream_end = None
+                        stream_duration = 0
+
+                    # 对子节点按 stream 开始时间排序
+                    stream_children.sort(key=lambda x: x.get("stream_start_ns", 0) if x.get("stream_start_ns") is not None else 0)
+
+                    return {
+                        "type": "NvtxNode",
+                        "name": n.name,
+                        "stream_start_ns": stream_start,
+                        "stream_end_ns": stream_end,
+                        "stream_duration_ns": stream_duration,
+                        "stream_children": stream_children,
+                    }
+                return None
+            return None
+
+        # 构建 stream 树
+        result = build_stream_tree(node)
+
+        if result is None:
+            return
+
+        # 构建输出（根节点包装在列表中）
+        output_data = [result]
+
+        with open(filename, 'w') as f:
+            json.dump(output_data, f, indent=2)
+
+        print(f"  Exported {step_name} stream {stream_id} to {filename}")
+
+
     def run(self):
         self.load_devices_from_sqlite()
         self.load_and_parse()
         self.build_event_tree()
         self.compute_stream_timeline()
+
+        # 计算 stream GPU 时间并构建 stream trees
+        streams = self.calculate_stream_gpu_time()
+        self.build_stream_trees(streams)
+
+        # 导出 stream trees
+        self.export_stream_trees(streams)
+
         self.analyze_steps()
         # self.analyze_fine_grained_offloading()
 
