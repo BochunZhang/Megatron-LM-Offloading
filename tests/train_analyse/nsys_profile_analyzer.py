@@ -299,6 +299,46 @@ class NvtxNode(BaseNode):
                 return self.step, self.gpu_time
         return None, None
     
+    def analyse_fine_grained_offloading(self):
+        assert self.fastpath.startswith('fine_')
+
+        def _extract_sizes_from_text(text: str) -> List[List[int]]:
+            """Extract sizes array from text, handling nested arrays properly."""
+            # "aten::copy_, op_id = 15, sizes = [[2, 4096], [2, 4096], []], input_op_ids = [(14,0), (0,-1), (0,-1)]"
+            match = re.search(r'sizes\s*=\s*(\[[\[\]\d,\s]+\])', text)
+            if match:
+                try:
+                    sizes_str = match.group(1)
+                    return json.loads(sizes_str.replace("'", '"'))
+                except:
+                    pass
+            return []
+        
+        result: list[MemcpyEvent] = defaultdict()
+        for child in self.fast_children:
+            if child.name.startswith('aten::copy_'):
+                sizes = _extract_sizes_from_text(child.name)
+                numel = 1
+                for s in sizes:
+                    numel *= s[0]
+                child.shape = sizes
+                
+                for c in child.children:
+                    if getattr(c.event.cudaEvent, 'memcpy', None) is not None:
+                        memcpy = c.event.cudaEvent.memcpy
+                        memcpy.numel = numel
+                        memcpy.time = TimeRange(c.event.CudaEvent.startNs, c.event.CudaEvent.endNs).durationNs
+                        memcpy.bytePerEle = memcpy.sizebytes / numel
+                        memcpy.throughput = memcpy.sizebytes / (memcpy.time.durationNs * 1e-9)
+                        result.append(memcpy)
+        # summary = {
+        #     'size': sum([m.sizebytes for m in result]),
+        #     'duration': sum([m.time.durationNs for m in result]),
+        #     # 'duration': result[-1].time.endNs - result[0].time.startNs
+        # }
+        # summary['throughput'] = summary['size'] / (summary['duration'] * 1e-9)
+        self.memcpys = result
+
 
 class CudaNode(BaseNode):
     def __init__(self, event: TraceProcessEvent):
@@ -481,7 +521,7 @@ class NSYSAnalyzer:
                 else:
                     nodes.append(CudaNode(event))
 
-            # 3. 构建 event tree
+            # 4. 构建 event tree
             total_events = 0
             stack : List[CudaNode|NvtxNode] = []
             roots : List[CudaNode|NvtxNode] = []
@@ -540,6 +580,7 @@ class NSYSAnalyzer:
                     result = node.analyse_step_gpu_time()
                     print(result['forward_step[0]'])
                     # 制表...
+                    
         
 
     def analyze_fine_grained_offloading(self):
@@ -547,23 +588,57 @@ class NSYSAnalyzer:
         print("Step 6: Analyzing fine-grained offloading")
         print("=" * 80)
 
-        def _fine_grained_group(node: NvtxNode, offload: str):
-            result = {}
+        def _fine_grained_group(node: NvtxNode, offload: str, result: Dict[str, List[NvtxNode]]):
             for n in node.fast_children:
                 if n.fastpath == f'fine_{offload}':
+                    result[n.fastpath].append(n)
+                    return
+                else:
+                    _fine_grained_group(n, offload, result)
    
         for rank in self.target_ranks:
             fb = self.iterations[rank][self.target_iteration].search_for_fastpath('forward_step[0]')
             bb = self.iterations[rank][self.target_iteration].search_for_fastpath('backward_step[0]')
+            fg : Dict[str, List[NvtxNode]] = defaultdict(list)
+            bg : Dict[str, List[NvtxNode]] = defaultdict(list)
 
+            _fine_grained_group(fb, 'offload', fg)
+            _fine_grained_group(bb, 'reload', bg)
+
+            offload : Dict[str, List[MemcpyEvent]] = defaultdict(list)
+            for key, group in fg.items():
+                for node in group:
+                    node.analyse_fine_grained_offloading()
+                offload[key] = group[0].memcpys
             
+            offload_summary = {
+                key: {
+                    'size': sum([m.sizebytes for m in group[0].memcpys]),
+                    'duration': sum([m.time.durationNs for m in group[0].memcpys]),
+                }
+                for key, group in fg.items()
+                # 'duration': result[-1].time.endNs - result[0].time.startNs
+            }
+            for key, dict in offload_summary.items():
+                dict[key]['throughput'] = dict['size'] / (dict['duration'] * 1e-9)
 
-            # 统计第一个 forward step & 第一个 backward step
-            # 各个 group 第一次出现时的数据
+            reload : Dict[str, List[MemcpyEvent]] = defaultdict(list)
+            for key, group in bg.items():
+                for node in group:
+                    node.analyse_fine_grained_offloading()
+                reload[key] = group[0].memcpys
+            reload_summary = {
+                key: {
+                    'size': sum([m.sizebytes for m in group[0].memcpys]),
+                    'duration': sum([m.time.durationNs for m in group[0].memcpys]),
+                }
+                for key, group in bg.items()
+                # 'duration': result[-1].time.endNs - result[0].time.startNs
+            }
+            for key, dict in reload_summary.items():
+                dict[key]['throughput'] = dict['size'] / (dict['duration'] * 1e-9)
 
-
-
-
+            # 制表...
 
 
     def run(self):
