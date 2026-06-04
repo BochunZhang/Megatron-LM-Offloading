@@ -1322,6 +1322,26 @@ class NSYSAnalyzer:
         # Use pre-built sig_to_device mapping
         return self.sig_to_device.get(step_nvtx.process_signature)
 
+    def _get_device_from_gpu_time(self, gpu_time_ns: int) -> Optional[int]:
+        """Find the device that executed a GPU event at the given time.
+
+        This works by finding which device's CUDA events include the given timestamp.
+        """
+        for device_id in self.devices:
+            # Get CUDA events for this device
+            device_events = []
+            for sig, events in self.cuda_events_by_signature.items():
+                for evt in events:
+                    if evt.device_id == device_id and evt.gpu_start_ns is not None:
+                        device_events.append(evt)
+
+            # Check if any event on this device contains the given time
+            for evt in device_events:
+                if evt.gpu_start_ns <= gpu_time_ns <= evt.gpu_end_ns:
+                    return device_id
+
+        return None
+
     def _export_step_data(self, step_nvtx: NvtxEvent, output_dir: str, iteration: int, pcie_suffix: str):
         """导出单个 step 的数据"""
         step_name = step_nvtx.step_type.value
@@ -2260,15 +2280,35 @@ class NSYSAnalyzer:
             print(f"No offload/reload data found for iteration {iteration_num}")
             return
 
-        # Organize by device
-        device_groups = {}
+        # Organize by device - 支持多 device
+        device_groups: Dict[int, Dict[str, Any]] = {}
         for group in offload_groups:
-            if group.copies:
-                device_id = 0  # Default
-                device_groups.setdefault(device_id, {'offload': [], 'reload': []})['offload'].append(group)
+            if group.copies and group.copies[0].gpu_start_ns:
+                # 从第一个 copy 的 GPU 时间推断 device
+                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
+                if device_id is None:
+                    device_id = 0
+                if device_id not in device_groups:
+                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
+                device_groups[device_id]['offload'].append(group)
+                # Update counts for this device
+                if group.group in device_groups[device_id]['offload_counts']:
+                    device_groups[device_id]['offload_counts'][group.group] += 1
+                else:
+                    device_groups[device_id]['offload_counts'][group.group] = 1
         for group in reload_groups:
-            device_id = 0  # Default
-            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
+            if group.copies and group.copies[0].gpu_start_ns:
+                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
+                if device_id is None:
+                    device_id = 0
+                if device_id not in device_groups:
+                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
+                device_groups[device_id]['reload'].append(group)
+                # Update counts for this device
+                if group.group in device_groups[device_id]['reload_counts']:
+                    device_groups[device_id]['reload_counts'][group.group] += 1
+                else:
+                    device_groups[device_id]['reload_counts'][group.group] = 1
 
         # Create Excel file per device（只导出指定的 rank）
         for device_id, groups_data in device_groups.items():
@@ -2481,22 +2521,40 @@ class NSYSAnalyzer:
             return
 
         # Get offload groups from forward_step[0]
-        offload_groups, offload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
+        offload_groups, _ = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
         # Get reload groups from backward_step[0]
-        reload_groups, reload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
+        reload_groups, _ = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
 
         if not offload_groups and not reload_groups:
             print(f"No offload/reload data found for iteration {iteration_num}")
             return
 
-        # Organize by device
-        device_groups = {}
+        # Organize by device - 支持多 device
+        device_groups: Dict[int, Dict[str, Any]] = {}
         for group in offload_groups:
-            device_id = 0  # Default
-            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['offload'].append(group)
+            if group.copies and group.copies[0].gpu_start_ns:
+                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
+                if device_id is None:
+                    device_id = 0
+                if device_id not in device_groups:
+                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
+                device_groups[device_id]['offload'].append(group)
+                if group.group in device_groups[device_id]['offload_counts']:
+                    device_groups[device_id]['offload_counts'][group.group] += 1
+                else:
+                    device_groups[device_id]['offload_counts'][group.group] = 1
         for group in reload_groups:
-            device_id = 0  # Default
-            device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
+            if group.copies and group.copies[0].gpu_start_ns:
+                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
+                if device_id is None:
+                    device_id = 0
+                if device_id not in device_groups:
+                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
+                device_groups[device_id]['reload'].append(group)
+                if group.group in device_groups[device_id]['reload_counts']:
+                    device_groups[device_id]['reload_counts'][group.group] += 1
+                else:
+                    device_groups[device_id]['reload_counts'][group.group] = 1
 
         # Create Excel file per device（只导出指定的 rank）
         for device_id, groups_data in device_groups.items():
@@ -2514,14 +2572,14 @@ class NSYSAnalyzer:
             wb = Workbook()
             has_sheets = False
 
-            # Process offload summary
+            # Process offload summary - 使用 device 自己的 counts
             if groups_data['offload']:
-                self._create_summary_sheet(wb, "summary-offload", groups_data['offload'], offload_counts, "offload")
+                self._create_summary_sheet(wb, "summary-offload", groups_data['offload'], groups_data['offload_counts'], "offload")
                 has_sheets = True
 
-            # Process reload summary
+            # Process reload summary - 使用 device 自己的 counts
             if groups_data['reload']:
-                self._create_summary_sheet(wb, "summary-reload", groups_data['reload'], reload_counts, "reload")
+                self._create_summary_sheet(wb, "summary-reload", groups_data['reload'], groups_data['reload_counts'], "reload")
                 has_sheets = True
 
             # Remove default sheet if it exists and we have other sheets
