@@ -206,6 +206,8 @@ class NvtxNode(BaseNode):
         self.name = event.text
         self.fast_parent: 'NvtxNode' = None
         self.fast_children: List['NvtxNode'] = []
+        # Stream-level tree structure: {stream_id: List[NvtxNode]}
+        self.stream_children: Dict[int, List['NvtxNode']] = {}
 
         self.analyse_fastpath()
 
@@ -588,17 +590,24 @@ class NSYSAnalyzer:
                     for step_name, timeline in steps_data.items():
                         print(f"Step {step_name}: {len(timeline)} streams")
 
-                    # 生成 Excel 表格
-                    self._generate_step_analyse_xlsx(steps_data)
+                    # 生成 Excel 表格，传入 rank 以获取 pcie_bus
+                    self._generate_step_analyse_xlsx(steps_data, rank)
 
-    def _generate_step_analyse_xlsx(self, steps_data: dict):
+    def _generate_step_analyse_xlsx(self, steps_data: dict, rank: int):
         """生成 step_analyse.xlsx 表格"""
         if not OPENPYXL_AVAILABLE:
             print("Warning: openpyxl not available, skipping Excel generation")
             return
 
-        # 确定输出路径
-        output_path = os.path.join(self.output_dir, "pcie_bus", "step_analyse.xlsx")
+        # 获取 pcie_bus，并将冒号替换为下划线
+        device_info = self.devices.get(rank)
+        if device_info and device_info.pcieBus:
+            pcie_bus = device_info.pcieBus.replace(":", "_")
+        else:
+            pcie_bus = f"device_{rank}"
+
+        # 确定输出路径: {output_dir}/{pcie_bus}/step_analyse.xlsx
+        output_path = os.path.join(self.output_dir, pcie_bus, "step_analyse.xlsx")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         # 收集所有 stream IDs
