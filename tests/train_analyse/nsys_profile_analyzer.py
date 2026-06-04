@@ -329,11 +329,12 @@ def calculate_tensor_bytes(sizes: List[List[int]], dtype_size: int = 4) -> int:
 # ============== 主分析器类 ==============
 
 class NSYSAnalyzer:
-    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16):
+    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16, rank: Optional[List[int]] = None):
         self.json_filepath = json_filepath
         self.sqlite_filepath = sqlite_filepath
         self.output_dir = output_dir
         self.iteration = iteration
+        self.rank = rank if rank is not None else [0, 1, 2, 3]  # 默认导出所有 device
         self.devices: Dict[int, DeviceInfo] = {}  # key: cuda device id
         self.nvtx_events: List[NvtxEvent] = []
         self.cuda_events_by_sig_corr: Dict[int, Dict[int, CudaEvent]] = defaultdict(dict)
@@ -1139,8 +1140,11 @@ class NSYSAnalyzer:
                 if device_id is not None:
                     steps_by_device[device_id].append(nvtx)
 
-        # 为每个 device 导出
+        # 为每个 device 导出（只导出指定的 rank）
         for device_id, steps_in_iteration in steps_by_device.items():
+            # 跳过未指定的 rank
+            if device_id not in self.rank:
+                continue
             device_info = self.devices.get(device_id)
             pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
             pcie_suffix = pcie_bus.replace(":", "_")
@@ -1396,8 +1400,11 @@ class NSYSAnalyzer:
                 if device_id is not None:
                     steps_by_device[device_id].append(nvtx)
 
-        # Create one Excel file per device in {pcie_bus}/summary.xlsx
+        # Create one Excel file per device in {pcie_bus}/summary.xlsx（只导出指定的 rank）
         for device_id, steps in steps_by_device.items():
+            # 跳过未指定的 rank
+            if device_id not in self.rank:
+                continue
             device_info = self.devices.get(device_id)
             pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
             pcie_suffix = pcie_bus.replace(":", "_")
@@ -2259,8 +2266,11 @@ class NSYSAnalyzer:
             device_id = 0  # Default
             device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
 
-        # Create Excel file per device
+        # Create Excel file per device（只导出指定的 rank）
         for device_id, groups_data in device_groups.items():
+            # 跳过未指定的 rank
+            if device_id not in self.rank:
+                continue
             device_info = self.devices.get(device_id)
             pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
             pcie_suffix = pcie_bus.replace(":", "_")
@@ -2484,8 +2494,11 @@ class NSYSAnalyzer:
             device_id = 0  # Default
             device_groups.setdefault(device_id, {'offload': [], 'reload': []})['reload'].append(group)
 
-        # Create Excel file per device
+        # Create Excel file per device（只导出指定的 rank）
         for device_id, groups_data in device_groups.items():
+            # 跳过未指定的 rank
+            if device_id not in self.rank:
+                continue
             device_info = self.devices.get(device_id)
             pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
             pcie_suffix = pcie_bus.replace(":", "_")
@@ -2620,6 +2633,7 @@ def main():
 Examples:
     python nsys_profile_analyzer.py --sqlite profile.sqlite --json profile.json --output ./output
     python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -i 16
+    python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -r 0 1
         """
     )
 
@@ -2631,6 +2645,8 @@ Examples:
                         help='Output directory for analysis results')
     parser.add_argument('--iteration', '-i', type=int, default=16,
                         help='Iteration number to analyze (default: 16)')
+    parser.add_argument('--rank', '-r', type=int, nargs='+', default=[0, 1, 2, 3],
+                        help='Device ranks to export (default: 0 1 2 3, export all devices)')
 
     args = parser.parse_args()
 
@@ -2652,9 +2668,10 @@ Examples:
     print(f"JSON file: {args.json}")
     print(f"Output directory: {args.output}")
     print(f"Iteration to analyze: {args.iteration}")
+    print(f"Ranks to export: {args.rank}")
     print(f"=" * 80)
 
-    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration)
+    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank)
     analyzer.run()
 
     print("\n" + "=" * 80)
