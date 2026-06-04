@@ -194,7 +194,7 @@ class BaseNode:
     def __init__(self, event: NvtxEvent | TraceProcessEvent):
         self.event = event
         self.cpu_time = TimeRange(event.startNs, event.endNs)
-        self.gpu_time = Optional[TimeRange]
+        self.gpu_time: Optional[TimeRange] = None
         self.timeline: Dict[int, Optional[TimeRange]] = {}
         self.children: List['BaseNode'] = []
         self.parent: Optional['BaseNode'] = None
@@ -236,16 +236,16 @@ class NvtxNode(BaseNode):
             self.step = 'optimizer'
             return
 
-        match = re.search(r'forward_step\[\d+\]', self.name)
+        match = re.search(r'(forward_step\[\d+\])', self.name)
         if match:
             self.fastpath = "step"
-            self.step = f'forward_step[{match.group(0)}]'
+            self.step = match.group(1)
             return
 
-        match = re.search(r'backward_step\[\d+\]', self.name)
+        match = re.search(r'(backward_step\[\d+\])', self.name)
         if match:
             self.fastpath = "step"
-            self.step = f'backward_step[{match.group(0)}]'
+            self.step = match.group(1)
             return
 
         if self.name.startswith('activation offloading'):
@@ -504,7 +504,8 @@ class NSYSAnalyzer:
                         assert getattr(cpu_event, 'cudaEvent', None) == None, \
                             f"Error: correlationId {gpu_event.correlationId} of {gpu_event} " \
                             f"already matched with another cudaEvent {getattr(cpu_event, 'cudaEvent')}"
-                        setattr(gpu_event, 'cudaEvent', cpu_event)
+                        # 把 CudaEvent 附加到 TraceProcessEvent 上，这样 CudaNode 可以访问
+                        setattr(cpu_event, 'cudaEvent', gpu_event)
                     else:
                         detach += 1
             print(f"device {rank}: matched {match} TraceProcessEvent with CudaEvent, detached {detach} CudaEvent without TraceProcessEvent")
@@ -615,11 +616,19 @@ class NSYSAnalyzer:
         ws = wb.active
         ws.title = "Step Analysis"
 
-        # 定义样式
-        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        subheader_fill = PatternFill(start_color="B4C7E7", end_color="B4C7E7", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF")
-        subheader_font = Font(bold=True)
+        # GPU Total: 深蓝色 4472C4
+        gpu_total_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+        # Priority streams: 绿色 70AD47
+        priority_stream_fill = PatternFill(start_color='70AD47', end_color='70AD47', fill_type='solid')
+        # Other streams: 橙色 FFC000
+        other_stream_fill = PatternFill(start_color='FFC000', end_color='FFC000', fill_type='solid')
+        # Field headers: 浅灰色 E7E6E6
+        field_fill = PatternFill(start_color='E7E6E6', end_color='E7E6E6', fill_type='solid')
+        # Step name header
+        step_name_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+
+        header_font = Font(bold=True, color='FFFFFF')
+        field_font = Font(bold=True)
         thin_border = Border(
             left=Side(style='thin'),
             right=Side(style='thin'),
@@ -628,64 +637,70 @@ class NSYSAnalyzer:
         )
         center_align = Alignment(horizontal='center', vertical='center')
 
-        # 第1行: 主标题 (合并单元格)
-        # 第一列是 step name，合并第1行和第2行
-        ws.cell(row=1, column=1, value="step name")
-        ws.cell(row=1, column=1).font = header_font
-        ws.cell(row=1, column=1).fill = header_fill
-        ws.cell(row=1, column=1).alignment = center_align
-        # 合并 step name 单元格 (第1行到第2行，第1列)
-        ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
-        ws.cell(row=1, column=1).border = thin_border
+        # 计算总列数
+        num_cols = 1 + (len(ordered_streams) + 1) * 3
 
-        # GPU Total 和各个 Stream 的标题
-        # 每个标题占据3列 (对应下面的 start_ns, end_ns, duration_ns)
+        # Row 1: 标题 (合并单元格)
+        end_col_letter = self._get_col_letter(num_cols)
+        ws['A1'] = "GPU Execution Times"
+        ws['A1'].font = Font(bold=True, size=14)
+        ws.merge_cells(f'A1:{end_col_letter}1')
+
+        # Row 2: Stream headers (每个占3列，合并)
+        # 第一列: Step Name
+        ws.cell(row=2, column=1, value="")
+        ws.cell(row=2, column=1).font = header_font
+        ws.cell(row=2, column=1).fill = step_name_fill
+        ws.cell(row=2, column=1).alignment = center_align
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=1)
+        ws.cell(row=2, column=1).border = thin_border
+
         col = 2
-
-        # GPU Total - 合并第1行的3列 (对应第2行的 start_ns, end_ns, duration_ns)
-        ws.cell(row=1, column=col, value="GPU Total")
-        ws.cell(row=1, column=col).font = header_font
-        ws.cell(row=1, column=col).fill = header_fill
-        ws.cell(row=1, column=col).alignment = center_align
-        # 合并 GPU Total 标题单元格 (第1行，跨越3列)
-        ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 2)
+        # GPU Total header
+        ws.cell(row=2, column=col, value="GPU Total")
+        ws.cell(row=2, column=col).font = header_font
+        ws.cell(row=2, column=col).fill = gpu_total_fill
+        ws.cell(row=2, column=col).alignment = center_align
+        ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
+        for c in range(col, col + 3):
+            ws.cell(row=2, column=c).border = thin_border
         col += 3
 
-        # Streams - 每个 Stream 标题合并第1行的3列
+        # Stream headers
         for stream_id in ordered_streams:
-            ws.cell(row=1, column=col, value=f"Stream {stream_id}")
-            ws.cell(row=1, column=col).font = header_font
-            ws.cell(row=1, column=col).fill = header_fill
-            ws.cell(row=1, column=col).alignment = center_align
-            # 合并 Stream 标题单元格 (第1行，跨越3列)
-            ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 2)
+            ws.cell(row=2, column=col, value=f"Stream {stream_id}")
+            ws.cell(row=2, column=col).font = header_font
+            # Priority streams 用绿色，其他用橙色
+            if stream_id in priority_streams:
+                ws.cell(row=2, column=col).fill = priority_stream_fill
+            else:
+                ws.cell(row=2, column=col).fill = other_stream_fill
+            ws.cell(row=2, column=col).alignment = center_align
+            ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
+            for c in range(col, col + 3):
+                ws.cell(row=2, column=c).border = thin_border
             col += 3
 
-        # 第2行: 子标题 (start_ns, end_ns, duration_ns)
-        col = 2
-        sub_headers = ["start_ns", "end_ns", "duration_ns"]
+        # Row 3: Field headers (start_ns, end_ns, duration_ns)
+        col = 1
+        ws.cell(row=3, column=col, value="Step Name")
+        ws.cell(row=3, column=col).font = field_font
+        ws.cell(row=3, column=col).fill = field_fill
+        ws.cell(row=3, column=col).alignment = center_align
+        ws.cell(row=3, column=col).border = thin_border
+        col += 1
 
-        # GPU Total 的子标题
-        for i, sub in enumerate(sub_headers):
-            ws.cell(row=2, column=col + i, value=sub)
-            ws.cell(row=2, column=col + i).font = subheader_font
-            ws.cell(row=2, column=col + i).fill = subheader_fill
-            ws.cell(row=2, column=col + i).alignment = center_align
-            ws.cell(row=2, column=col + i).border = thin_border
-        col += 3
+        for _ in range(len(ordered_streams) + 1):  # +1 for GPU Total
+            for field_name in ['start_ns', 'end_ns', 'duration_ns']:
+                cell = ws.cell(row=3, column=col, value=field_name)
+                cell.font = field_font
+                cell.fill = field_fill
+                cell.alignment = center_align
+                cell.border = thin_border
+                col += 1
 
-        # 各个 Stream 的子标题
-        for stream_id in ordered_streams:
-            for i, sub in enumerate(sub_headers):
-                ws.cell(row=2, column=col + i, value=sub)
-                ws.cell(row=2, column=col + i).font = subheader_font
-                ws.cell(row=2, column=col + i).fill = subheader_fill
-                ws.cell(row=2, column=col + i).alignment = center_align
-                ws.cell(row=2, column=col + i).border = thin_border
-            col += 3
-
-        # 数据行 (从第3行开始)
-        row = 3
+        # 数据行 (从第4行开始)
+        row = 4
         for step_name in steps_data.keys():
             timeline = steps_data[step_name]
 
@@ -730,14 +745,23 @@ class NSYSAnalyzer:
 
             row += 1
 
-        # 调整列宽
-        ws.column_dimensions['A'].width = 25
-        for c in range(2, col):
-            ws.column_dimensions[chr(64 + c) if c <= 26 else 'A' + chr(64 + c - 26)].width = 18
+        # 调整列宽 - 参考 old.py 的格式
+        ws.column_dimensions['A'].width = 20
+        for c in range(2, num_cols + 1):
+            col_letter = self._get_col_letter(c)
+            ws.column_dimensions[col_letter].width = 15
 
         # 保存文件
         wb.save(output_path)
         print(f"\nStep analysis saved to: {output_path}")
+
+    def _get_col_letter(self, col_idx: int) -> str:
+        """Convert column index to Excel column letter (1=A, 2=B, 27=AA, etc.)"""
+        result = ""
+        while col_idx > 0:
+            col_idx, remainder = divmod(col_idx - 1, 26)
+            result = chr(65 + remainder) + result
+        return result
                     
         
 
@@ -805,7 +829,7 @@ class NSYSAnalyzer:
         self.build_event_tree()
         self.compute_stream_timeline()
         self.analyze_steps()
-        self.analyze_fine_grained_offloading()
+        # self.analyze_fine_grained_offloading()
 
 def main():
     parser = argparse.ArgumentParser(
