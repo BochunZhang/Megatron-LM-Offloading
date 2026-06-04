@@ -222,7 +222,7 @@ class NvtxNode(BaseNode):
                     return result
         return None
     
-    def analyse_type(self):
+    def analyse_fastpath(self):
         if self.name.startswith("iteration "):
             match = re.search(r'iteration (\d+)', self.name)
             if match:
@@ -265,7 +265,8 @@ class NvtxNode(BaseNode):
             parent.fast_children.append(self)
         
         for child in self.children:
-            child.set_fastpath(self if self.fastpath is not None else parent)
+            if isinstance(child, NvtxNode):
+                child.set_fastpath(self if self.fastpath is not None else parent)
 
     def compute_stream_timeline(self) -> Dict[int, Optional[TimeRange]]:
         for child in self.children:
@@ -356,6 +357,9 @@ class CudaNode(BaseNode):
     
     def analyse_step_gpu_time(self, **kwargs):
         return None
+    
+    def analyse_fastpath(self):
+        self.fastpath = None
 
 # ============== 主分析器类 ==============
 
@@ -574,12 +578,170 @@ class NSYSAnalyzer:
         print("Step 5: Analyzing step GPU execution times")
         print("=" * 80)
 
+        # 收集数据: {step_name: {stream_id: TimeRange}}
+        steps_data = {}
+
         for rank in self.target_ranks:
             for it, node in self.iterations[rank].items():
                 if it == self.target_iteration:
-                    result = node.analyse_step_gpu_time()
-                    print(result['forward_step[0]'])
-                    # 制表...
+                    # 获取所有 step 节点
+                    for child in node.fast_children:
+                        if child.fastpath == 'step':
+                            step_name = child.step
+                            steps_data[step_name] = child.timeline
+                            print(f"Step {step_name}: {child.gpu_time}")
+
+        # 生成 Excel 表格
+        self._generate_step_analyse_xlsx(steps_data)
+
+    def _generate_step_analyse_xlsx(self, steps_data: dict):
+        """生成 step_analyse.xlsx 表格"""
+        if not OPENPYXL_AVAILABLE:
+            print("Warning: openpyxl not available, skipping Excel generation")
+            return
+
+        # 确定输出路径
+        output_path = os.path.join(self.output_dir, "pcie_bus", "step_analyse.xlsx")
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # 收集所有 stream IDs
+        all_streams = set()
+        for step_name, timeline in steps_data.items():
+            all_streams.update(timeline.keys())
+
+        # 排序: 7, 47, 43 放在最前面，其余按大小排序
+        priority_streams = [7, 47, 43]
+        remaining_streams = sorted([s for s in all_streams if s not in priority_streams])
+        ordered_streams = priority_streams + remaining_streams
+
+        # 创建工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Step Analysis"
+
+        # 定义样式
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        subheader_fill = PatternFill(start_color="B4C7E7", end_color="B4C7E7", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        subheader_font = Font(bold=True)
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        center_align = Alignment(horizontal='center', vertical='center')
+
+        # 第1行: 主标题 (合并单元格)
+        # 第一列是 step name，合并第1行和第2行
+        ws.cell(row=1, column=1, value="step name")
+        ws.cell(row=1, column=1).font = header_font
+        ws.cell(row=1, column=1).fill = header_fill
+        ws.cell(row=1, column=1).alignment = center_align
+        # 合并 step name 单元格 (第1行到第2行，第1列)
+        ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
+        ws.cell(row=1, column=1).border = thin_border
+
+        # GPU Total 和各个 Stream 的标题
+        # 每个标题占据3列 (对应下面的 start_ns, end_ns, duration_ns)
+        col = 2
+
+        # GPU Total - 合并第1行的3列 (对应第2行的 start_ns, end_ns, duration_ns)
+        ws.cell(row=1, column=col, value="GPU Total")
+        ws.cell(row=1, column=col).font = header_font
+        ws.cell(row=1, column=col).fill = header_fill
+        ws.cell(row=1, column=col).alignment = center_align
+        # 合并 GPU Total 标题单元格 (第1行，跨越3列)
+        ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 2)
+        col += 3
+
+        # Streams - 每个 Stream 标题合并第1行的3列
+        for stream_id in ordered_streams:
+            ws.cell(row=1, column=col, value=f"Stream {stream_id}")
+            ws.cell(row=1, column=col).font = header_font
+            ws.cell(row=1, column=col).fill = header_fill
+            ws.cell(row=1, column=col).alignment = center_align
+            # 合并 Stream 标题单元格 (第1行，跨越3列)
+            ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 2)
+            col += 3
+
+        # 第2行: 子标题 (start_ns, end_ns, duration_ns)
+        col = 2
+        sub_headers = ["start_ns", "end_ns", "duration_ns"]
+
+        # GPU Total 的子标题
+        for i, sub in enumerate(sub_headers):
+            ws.cell(row=2, column=col + i, value=sub)
+            ws.cell(row=2, column=col + i).font = subheader_font
+            ws.cell(row=2, column=col + i).fill = subheader_fill
+            ws.cell(row=2, column=col + i).alignment = center_align
+            ws.cell(row=2, column=col + i).border = thin_border
+        col += 3
+
+        # 各个 Stream 的子标题
+        for stream_id in ordered_streams:
+            for i, sub in enumerate(sub_headers):
+                ws.cell(row=2, column=col + i, value=sub)
+                ws.cell(row=2, column=col + i).font = subheader_font
+                ws.cell(row=2, column=col + i).fill = subheader_fill
+                ws.cell(row=2, column=col + i).alignment = center_align
+                ws.cell(row=2, column=col + i).border = thin_border
+            col += 3
+
+        # 数据行 (从第3行开始)
+        row = 3
+        for step_name in steps_data.keys():
+            timeline = steps_data[step_name]
+
+            # step name
+            ws.cell(row=row, column=1, value=step_name)
+            ws.cell(row=row, column=1).alignment = center_align
+            ws.cell(row=row, column=1).border = thin_border
+
+            # 计算 GPU Total (所有 streams 的并集时间范围)
+            if timeline:
+                all_start = min(tr.startNs for tr in timeline.values())
+                all_end = max(tr.endNs for tr in timeline.values())
+                all_duration = all_end - all_start
+            else:
+                all_start = all_end = all_duration = 0
+
+            col = 2
+            # GPU Total 数据
+            ws.cell(row=row, column=col, value=all_start)
+            ws.cell(row=row, column=col + 1, value=all_end)
+            ws.cell(row=row, column=col + 2, value=all_duration)
+            for i in range(3):
+                ws.cell(row=row, column=col + i).alignment = center_align
+                ws.cell(row=row, column=col + i).border = thin_border
+            col += 3
+
+            # 各个 Stream 数据
+            for stream_id in ordered_streams:
+                if stream_id in timeline:
+                    tr = timeline[stream_id]
+                    ws.cell(row=row, column=col, value=tr.startNs)
+                    ws.cell(row=row, column=col + 1, value=tr.endNs)
+                    ws.cell(row=row, column=col + 2, value=tr.durationNs)
+                else:
+                    ws.cell(row=row, column=col, value="")
+                    ws.cell(row=row, column=col + 1, value="")
+                    ws.cell(row=row, column=col + 2, value="")
+                for i in range(3):
+                    ws.cell(row=row, column=col + i).alignment = center_align
+                    ws.cell(row=row, column=col + i).border = thin_border
+                col += 3
+
+            row += 1
+
+        # 调整列宽
+        ws.column_dimensions['A'].width = 25
+        for c in range(2, col):
+            ws.column_dimensions[chr(64 + c) if c <= 26 else 'A' + chr(64 + c - 26)].width = 18
+
+        # 保存文件
+        wb.save(output_path)
+        print(f"\nStep analysis saved to: {output_path}")
                     
         
 
