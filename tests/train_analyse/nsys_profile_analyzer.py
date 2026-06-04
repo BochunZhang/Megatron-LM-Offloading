@@ -6,7 +6,6 @@ NSYS Profile Analyzer V3
 Usage:
     python nsys_profile_analyzer.py --sqlite <sqlite_path> --json <json_path> --output <output_dir>
     python nsys_profile_analyzer.py -s <sqlite_path> -j <json_path> -o <output_dir>
-    python nsys_profile_analyzer.py -s <sqlite_path> -j <json_path> -o <output_dir> --rank 0 1
 """
 
 import argparse
@@ -330,12 +329,11 @@ def calculate_tensor_bytes(sizes: List[List[int]], dtype_size: int = 4) -> int:
 # ============== 主分析器类 ==============
 
 class NSYSAnalyzer:
-    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16, rank: Optional[List[int]] = None):
+    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16):
         self.json_filepath = json_filepath
         self.sqlite_filepath = sqlite_filepath
         self.output_dir = output_dir
         self.iteration = iteration
-        self.rank = rank if rank is not None else [0, 1, 2, 3]  # Default to all ranks
         self.devices: Dict[int, DeviceInfo] = {}  # key: cuda device id
         self.nvtx_events: List[NvtxEvent] = []
         self.cuda_events_by_sig_corr: Dict[int, Dict[int, CudaEvent]] = defaultdict(dict)
@@ -350,7 +348,6 @@ class NSYSAnalyzer:
         self.iterations: Dict[int, List[NvtxEvent]] = defaultdict(list)
         self.string_table: Dict[str, str] = {}
         self.sig_to_device: Dict[int, int] = {}  # process_signature -> main device_id
-        self.allowed_devices: Set[int] = set(self.rank)  # Set of allowed device IDs for filtering
 
     def log_bug(self, message: str):
         self.bugs.append(message)
@@ -361,10 +358,9 @@ class NSYSAnalyzer:
         return name_id
 
     def load_devices_from_sqlite(self):
-        """从 sqlite 数据库加载 GPU 设备信息，并根据 --rank 参数过滤"""
+        """从 sqlite 数据库加载 GPU 设备信息"""
         print("=" * 80)
         print("Loading device info from SQLite")
-        print(f"Filtering devices: {sorted(self.allowed_devices)}")
         print("=" * 80)
 
         conn = sqlite3.connect(self.sqlite_filepath)
@@ -376,21 +372,16 @@ class NSYSAnalyzer:
 
         for row in rows:
             nsys_gpu_id, name, bus_location, cu_device = row
-            # 只加载在 allowed_devices 中的设备
-            if cu_device in self.allowed_devices:
-                device_info = DeviceInfo(
-                    device_id=cu_device,      # CUDA device id
-                    nsys_gpu_id=nsys_gpu_id,
-                    name=name,
-                    pcie_bus=bus_location     # e.g., "0009:01:00.0"
-                )
-                self.devices[cu_device] = device_info
-                print(f"  Device {cu_device}: {name}, PCIe={bus_location} [LOADED]")
-            else:
-                print(f"  Device {cu_device}: {name}, PCIe={bus_location} [SKIPPED - not in rank filter]")
+            device_info = DeviceInfo(
+                device_id=cu_device,      # CUDA device id
+                nsys_gpu_id=nsys_gpu_id,
+                name=name,
+                pcie_bus=bus_location     # e.g., "0009:01:00.0"
+            )
+            self.devices[cu_device] = device_info
+            print(f"  Device {cu_device}: {name}, PCIe={bus_location}")
 
         conn.close()
-        print(f"Loaded {len(self.devices)} devices out of {len(rows)} total")
 
     def load_and_parse(self):
         print("\n" + "=" * 80)
@@ -566,10 +557,6 @@ class NSYSAnalyzer:
 
         device_id = int(cuda_data.get("deviceId", -1))
         stream_id = str(cuda_data.get("streamId", "0"))
-
-        # Filter by device_id based on --rank parameter
-        if device_id not in self.allowed_devices:
-            return
 
         # 检测是否为同步事件 (eventClass=5 或有 sync 字段)
         is_sync = False
@@ -2633,7 +2620,6 @@ def main():
 Examples:
     python nsys_profile_analyzer.py --sqlite profile.sqlite --json profile.json --output ./output
     python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output -i 16
-    python nsys_profile_analyzer.py -s profile.sqlite -j profile.json -o ./output --rank 0 1
         """
     )
 
@@ -2645,8 +2631,6 @@ Examples:
                         help='Output directory for analysis results')
     parser.add_argument('--iteration', '-i', type=int, default=16,
                         help='Iteration number to analyze (default: 16)')
-    parser.add_argument('--rank', type=int, nargs='+', default=[0, 1, 2, 3],
-                        help='Device IDs to analyze (default: [0, 1, 2, 3])')
 
     args = parser.parse_args()
 
@@ -2668,10 +2652,9 @@ Examples:
     print(f"JSON file: {args.json}")
     print(f"Output directory: {args.output}")
     print(f"Iteration to analyze: {args.iteration}")
-    print(f"Ranks to analyze: {args.rank}")
     print(f"=" * 80)
 
-    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank)
+    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration)
     analyzer.run()
 
     print("\n" + "=" * 80)
