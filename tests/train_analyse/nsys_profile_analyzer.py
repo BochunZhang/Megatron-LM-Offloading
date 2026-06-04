@@ -15,9 +15,10 @@ import re
 import sqlite3
 import os
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Optional, List, Dict, Set, Tuple, Any
 from enum import Enum
+from copy import deepcopy
 
 try:
     from openpyxl import Workbook
@@ -26,375 +27,359 @@ try:
 except ImportError:
     OPENPYXL_AVAILABLE = False
 
+STRING_TABLE = {}
 
 # ============== 常量定义 ==============
 
-TYPE_TRACE_PROCESS_47 = 47
-TYPE_TRACE_PROCESS_48 = 48
-TYPE_NVTX_59 = 59
-TYPE_NVTX_75 = 75
-TYPE_CUDA_79 = 79
-TYPE_CUDA_80 = 80
-TYPE_CUDA_106 = 106
+TYPE_STRING = "String"
+TYPE_TRACE = 47                 # cuda API
+TYPE_TRACE_KERNEL = 48          # cuda kernel API, 通过 correlationId 关联到 cuda event, 
+TYPE_NVTX_RANGE = 59            # nvtx range event
+TYPE_CUDA_KERNEL = 79           # cude kernel event
+TYPE_CUDA_MEMCPY = 80           # cuda memcpy event, 记录 memcpy 详细信息
+TYPE_CUDA_SYNC_SRC = 106        # cuda sync event, 记录同步源 stream id 和 syncType, 通过 {"eventId":xxx,"eventSyncId":"xxx"} 关联到 type 127
+TYPE_CUDA_SYNC_DST = 127        # cuda sync event, 记录同步目的 stream id 和 device id
+# TYPE_NVTX_75 = 75           # NVTX 点事件
 
-
-class ThreadType(Enum):
-    MAIN = "main"
-    AUTOGRAD = "autograd"
-    UNKNOWN = "unknown"
-
-
-class StepType(Enum):
-    FORWARD_BACKWARD = "forward_backward"
-    FORWARD = "forward_step"
-    BACKWARD = "backward_step"
-    OPTIMIZER = "optimizer_step"
-    ITERATION = "iteration"
-    OFFLOAD_COMMIT = "offload_commit"
-    OFFLOAD_START = "offload_start"
-    UNKNOWN = "unknown"
-
-
-# ============== 数据类定义 ==============
 
 @dataclass
 class DeviceInfo:
     """GPU 设备信息"""
-    device_id: int           # CUDA device id
-    nsys_gpu_id: int        # NSYS internal GPU id
-    name: str = ""
-    pcie_bus: str = ""      # PCIe bus location, e.g., "0009:01:00.0"
-    properties: Dict = field(default_factory=dict)
+    name: str                   # device name, e.g., "NVIDIA GB200"
+    deviceId: int               # CUDA device id
+    pcieBus: str = ""           # PCIe bus location, e.g., "0009:01:00.0"
+    signatures: List[int] = field(default_factory=list)
 
 
 @dataclass
-class BaseEvent:
-    """Event 基类 - 只保留专用时间字段"""
-    # CPU 执行区间
-    cpu_start_ns: Optional[int] = None
-    cpu_end_ns: Optional[int] = None
-    cpu_duration_ns: Optional[int] = None
-
-    # GPU 执行区间
-    gpu_start_ns: Optional[int] = None
-    gpu_end_ns: Optional[int] = None
-    gpu_duration_ns: Optional[int] = None
-
-    # 特征值 (用于区分进程) - 高40bit
-    process_signature: int = 0
-
-    # 进程信息
-    thread_type: ThreadType = ThreadType.UNKNOWN
-    is_main_thread: bool = False
-
-    # 树形结构
-    parent: Optional['BaseEvent'] = None
-    children: List['BaseEvent'] = field(default_factory=list)
-
-    def get_sort_key(self) -> int:
-        """获取用于排序的时间戳（优先 CPU，其次 GPU）"""
-        if self.cpu_start_ns is not None:
-            return self.cpu_start_ns
-        if self.gpu_start_ns is not None:
-            return self.gpu_start_ns
-        return 0
-
-    def has_cpu_time(self) -> bool:
-        """检查是否有 CPU 时间"""
-        return self.cpu_start_ns is not None
-
-
-@dataclass
-class CudaEvent(BaseEvent):
-    """CUDA Event - 包含 TraceProcessEvent 和 CudaEvent 的合并信息"""
-    device_id: Optional[int] = None
-    stream_id: Optional[str] = None
-    correlation_id: int = 0
-    global_pid: Optional[str] = None
-    global_tid: Optional[str] = None
-    kernel_name: Optional[str] = None
-    short_name: Optional[str] = None
-    demangled_name: Optional[str] = None
-    is_memcpy: bool = False
-    memcpy_type: Optional[str] = None
-    memcpy_size_bytes: Optional[int] = None
-    throughput_gbps: Optional[float] = None
-    is_sync: bool = False  # 是否为同步事件 (cudaStreamWaitEvent 等)
-    sync_type: Optional[str] = None  # 同步类型
-    raw_data: Dict = field(default_factory=dict)
+class TimeRange:
+    startNs: int
+    endNs: int
+    durationNs: int = field(init=False)
 
     def __post_init__(self):
-        """计算派生字段"""
-        if self.gpu_start_ns is not None and self.gpu_end_ns is not None:
-            self.gpu_duration_ns = self.gpu_end_ns - self.gpu_start_ns
-        if self.cpu_start_ns is not None and self.cpu_end_ns is not None:
-            self.cpu_duration_ns = self.cpu_end_ns - self.cpu_start_ns
+        self.durationNs = self.endNs - self.startNs
 
+
+@dataclass
+class Base:
+    @classmethod
+    def from_dict(cls, data: dict, **kwargs: Any):
+        data.update(kwargs)
+        cleaned = {
+            f.name: f.type(data[f.name])
+            for f in fields(cls)
+            if f.init and f.name in data and data[f.name] is not None
+        }
+        return cls(**cleaned)
+    
+
+@dataclass
+class BaseEvent(Base):
+    type: int
+    startNs: int
+    endNs: int
+    durationNs: int = field(init=False)
+
+    def __post_init__(self):
+        self.startNs = int(self.startNs)
+        self.endNs = int(self.endNs)
+        self.durationNs = self.endNs - self.startNs
 
 @dataclass
 class NvtxEvent(BaseEvent):
-    """NVTX Event - CPU 上的 Python 事件记录"""
-    text: str = ""
-    global_tid: Optional[str] = None
-    domain_id: str = "0"
-    correlation_ids: Set[int] = field(default_factory=set)
-    cuda_events: List[CudaEvent] = field(default_factory=list)
-    iteration: Optional[int] = None
-    step_type: StepType = StepType.UNKNOWN
-    nvtx_type: int = TYPE_NVTX_59
-    raw_data: Dict = field(default_factory=dict)
-    sizes: List[List[int]] = field(default_factory=list)
+    text: str
+    globalTid: int
 
-    # Stream-level tree structure
-    # stream_gpu_time: {stream_id: (gpu_start_ns, gpu_end_ns, gpu_duration_ns)}
-    stream_gpu_time: Dict[str, Tuple[Optional[int], Optional[int], int]] = field(default_factory=dict)
-    # stream_parent: {stream_id: NvtxEvent}
-    stream_parent: Dict[str, 'NvtxEvent'] = field(default_factory=dict)
-    # stream_children: {stream_id: List[NvtxEvent]}
-    stream_children: Dict[str, List['NvtxEvent']] = field(default_factory=dict)
+    @classmethod
+    def from_dict(cls, data: dict, **kwargs: Any):
+        data['text'] = data.get('Text', '') 
+        data['startNs'] = data['Timestamp']
+        data['endNs'] = data['EndTimestamp']
+        data['globalTid'] = data['GlobalTid']
+        return super().from_dict(data, **kwargs)
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.signature = (self.globalTid >> 24) & 0xFFFFFF 
+        self.thread = "main" if (self.globalTid & 0xFFFFFF) == self.signature else "autograd"
 
 @dataclass
-class StepGPUExecution:
-    """记录 Step 的 GPU 执行时间"""
-    iteration: int
-    step_type: StepType
-    process_signature: int
-    first_cuda_start_ns: Optional[int] = None
-    last_cuda_end_ns: Optional[int] = None
-    gpu_duration_ns: int = 0
-    cuda_events: List[CudaEvent] = field(default_factory=list)
-    nvtx_event: Optional[NvtxEvent] = None
+class TraceProcessEvent(BaseEvent):
+    correlationId: int = 0
+    eventClass: int = 0
+    name: str = ""
+    globalTid: int = 0
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.name = STRING_TABLE.get(int(self.name), "failed to lookup")
+        self.signature = (self.globalTid >> 24) & 0xFFFFFF 
+        self.thread = "main" if (self.globalTid & 0xFFFFFF) == self.signature else "autograd"
+
+@dataclass 
+class CudaEvent(BaseEvent):
+    correlationId: int
+    deviceId: int
+    contextId: int
+    streamId: int
+    eventClass: int
+    globalPid: int
+    greenContextId: int = 0
+    signature: int = field(init=False)
+    kernel: Optional['KernelEvent'] = None
+    memcpy: Optional['MemcpyEvent'] = None
+    sync: Optional['SyncSrcEvent'] = None
+    cudaEventRecord: Optional['SyncDstEvent'] = None
+
+    @classmethod
+    def from_dict(cls, data: dict, **kwargs: Any):
+        data.update(kwargs)
+        cleaned = {
+            f.name: f.type(data[f.name]) if f.name not in ['kernel', 'memcpy', 'sync', 'cudaEventRecord'] else data[f.name]
+            for f in fields(cls)
+            if f.init and f.name in data and data[f.name] is not None
+        }
+        return cls(**cleaned)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.signature = (self.globalPid >> 24) & 0xFFFFFF
+
+        if self.kernel is not None:
+            self.kernel = KernelEvent.from_dict(self.kernel)
+        elif self.memcpy is not None:
+            self.memcpy = MemcpyEvent.from_dict(self.memcpy)
+        elif self.sync is not None:
+            self.sync = SyncSrcEvent.from_dict(self.sync)
+        elif self.cudaEventRecord is not None:
+            self.cudaEventRecord = SyncDstEvent.from_dict(self.cudaEventRecord)
 
 @dataclass
-class CopyOperation:
-    """Memory Copy 操作分析"""
-    iteration: int
-    step_type: StepType
-    process_signature: int
-    parent_nvtx: Optional[NvtxEvent] = None
-    module_name: str = ""
-    operation_type: str = ""
-    operation_desc: str = ""
-    copy_count: int = 0
-    copy_nvtx_events: List[NvtxEvent] = field(default_factory=list)
-    sizes_per_copy: List[List[List[int]]] = field(default_factory=list)
-    total_bytes: int = 0
-    memcpy_events: List[CudaEvent] = field(default_factory=list)
-    memcpy_total_bytes: int = 0
-    throughput_gbps: float = 0.0
-    is_blocking: bool = False
-    gpu_start_ns: Optional[int] = None
-    gpu_end_ns: Optional[int] = None
-
+class KernelEvent(Base):
+    """Type:79"""
+    shortName: str
+    
+    def __post_init__(self):
+        self.shortName = STRING_TABLE.get(int(self.shortName), "failed to lookup")
 
 @dataclass
-class ActivationCopyInfo:
-    """单个 copy_ 操作的详细信息"""
-    group: str                      # offload group 名称, e.g. qkv_linear
-    activation: str                 # 激活值名称，需要结合代码推断
-    shape: List[int]                # tensor 形状
-    size_bytes: int                 # 通信量 (bytes) - 来自 CUDA memcpy event
-    byte_per_element: int           # 每个元素的字节数 - 计算得出
-    throughput_gibs: float          # 吞吐 (GiB/s)
-    gpu_start_ns: Optional[int]     # GPU 开始时间
-    gpu_end_ns: Optional[int]       # GPU 结束时间
-    gpu_duration_ns: Optional[int]  # GPU 执行时长
-    memcpy_size_bytes: Optional[int] = None  # 从 CudaEvent 获取的实际 sizebytes
-
+class MemcpyEvent(Base):
+    """Type:80"""
+    sizebytes: int
+    copyKind: int 
+    srcKind: int
+    dstKind: int
+    copyCount: int
 
 @dataclass
-class ActivationOffloadGroup:
-    """一个 offload group 的信息（包含多个 copy_）"""
-    group: str                      # group 名称, e.g. core_attn
-    operation_type: str             # "offload" or "reload"
-    copies: List[ActivationCopyInfo] = field(default_factory=list)
-    total_size_bytes: int = 0
-    total_throughput_gibs: float = 0.0
-    gpu_start_ns: Optional[int] = None
-    gpu_end_ns: Optional[int] = None
+class SyncSrcEvent(Base):
+    """Type:106"""
+    eventId: int
+    eventSyncId: int
+    syncType: str
 
-    def calculate_totals(self):
-        """计算总通信量和总吞吐"""
-        self.total_size_bytes = sum(c.size_bytes for c in self.copies)
-        if self.copies:
-            total_duration_ns = sum(c.gpu_duration_ns or 0 for c in self.copies)
-            if total_duration_ns > 0:
-                self.total_throughput_gibs = (self.total_size_bytes / (1024**3)) / (total_duration_ns / 1e9)
+@dataclass
+class SyncDstEvent(Base):
+    """Type:127"""
+    eventId: int
+    eventSyncId: int
+
+    def __post_init__(self):
+        self.eventId = int(self.eventId)
+        self.eventSyncId = int(self.eventSyncId)
 
 
-# ============== 辅助函数 ==============
-
-def parse_tid_structure(tid: int) -> Dict:
-    high_16 = (tid >> 48) & 0xFFFF
-    mid_24 = (tid >> 24) & 0xFFFFFF
-    low_24 = tid & 0xFFFFFF
-    is_main = low_24 == mid_24
-    thread_type = ThreadType.MAIN if is_main else ThreadType.AUTOGRAD
-    return {
-        "high_16": high_16,
-        "process_id": mid_24,
-        "thread_id": low_24,
-        "is_main_thread": is_main,
-        "thread_type": thread_type,
-        "process_signature": (high_16 << 24) | mid_24,
-    }
+class BaseNode:
+    def __init__(self, event: NvtxEvent | TraceProcessEvent):
+        self.event = event
+        self.cpu_time = TimeRange(event.startNs, event.endNs)
+        self.gpu_time = Optional[TimeRange]
+        self.timeline: Dict[int, Optional[TimeRange]] = {}
+        self.children: List['BaseNode'] = []
+        self.parent: Optional['BaseNode'] = None
 
 
-def get_process_signature_from_id(tid_or_pid: int) -> int:
-    return (tid_or_pid >> 24) & 0xFFFFFFFFFF
+class NvtxNode(BaseNode):
+    def __init__(self, event: NvtxEvent):
+        super().__init__(event)
+        self.name = event.text
+        self.fast_parent: 'NvtxNode' = None
+        self.fast_children: List['NvtxNode'] = []
 
+        self.analyse_fastpath()
 
-def extract_step_type(text: str) -> StepType:
-    text_lower = text.lower()
-    if "iteration" in text_lower and "=" not in text_lower:
-        return StepType.ITERATION
-    elif "forward_backward_func" in text_lower:
-        return StepType.FORWARD_BACKWARD
-    elif "forward_step" in text_lower:
-        return StepType.FORWARD
-    elif "backward_step" in text_lower:
-        return StepType.BACKWARD
-    elif "megatron.training.training.train_step.optimizer.step" in text_lower:
-        # Only match the top-level optimizer step, not internal ones
-        return StepType.OPTIMIZER
-    elif "FineGrainedOffloadingGroupCommitFunction" in text:
-        return StepType.OFFLOAD_COMMIT
-    elif "FineGrainedOffloadingGroupStartFunction" in text:
-        return StepType.OFFLOAD_START
-    return StepType.UNKNOWN
+    def search_for_fastpath(self, target: str):
+        """
+        通过 fastpath查找指定 iteration 下的 target 节点
+        """
+        if getattr(self, self.fastpath) == target:
+            return self
+        else:
+            for child in self.fast_children:
+                result = child.search_for_fastpath(target)
+                if result is not None:
+                    return result
+        return None
+    
+    def analyse_type(self):
+        if self.name.startswith("iteration "):
+            match = re.search(r'iteration (\d+)', self.name)
+            if match:
+                self.fastpath = "iteration"
+                self.iteration = int(match.group(1))
+                return
 
+        if self.name.endswith('optimizer.step'):
+            self.fastpath = "step"
+            self.step = 'optimizer'
+            return
 
-def simplify_step_name(text: str, step_type: StepType) -> str:
-    """简化 step 名称
-
-    Examples:
-        megatron.core.pipeline_parallel.schedules.forward_backward_no_pipelining.forward_step[0] -> forward_step[0]
-        megatron.core.pipeline_parallel.schedules.forward_backward_no_pipelining.backward_step[0] -> backward_step[0]
-        megatron.training.training.train_step.optimizer.step -> optimizer_step
-    """
-    if step_type == StepType.FORWARD:
-        # 提取 forward_step[0]
-        match = re.search(r'forward_step\[\d+\]', text)
+        match = re.search(r'forward_step\[\d+\]', self.name)
         if match:
-            return match.group(0)
-        return "forward_step"
-    elif step_type == StepType.BACKWARD:
-        # 提取 backward_step[0]
-        match = re.search(r'backward_step\[\d+\]', text)
+            self.fastpath = "step"
+            self.step = f'forward_step[{match.group(0)}]'
+            return
+
+        match = re.search(r'backward_step\[\d+\]', self.name)
         if match:
-            return match.group(0)
-        return "backward_step"
-    elif step_type == StepType.OPTIMIZER:
-        # 简化为 optimizer_step
-        return "optimizer_step"
-    return text
+            self.fastpath = "step"
+            self.step = f'backward_step[{match.group(0)}]'
+            return
 
+        if self.name.startswith('activation offloading'):
+            self.fastpath = "fine_offload"
+            self.fine_offload = self.name.split(' ')[-1]
+            return
 
-def extract_iteration(text: str) -> Optional[int]:
-    match = re.search(r'iteration\s+(\d+)', text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    match = re.search(r'it[=:]\s*(\d+)', text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    return None
+        if self.name.startswith('activation reloading'):
+            self.fastpath = "fine_reload"
+            self.fine_reload = self.name.split(' ')[-1]
+            return
+        
+        self.fastpath = None
 
+    def set_fastpath(self, parent = None):
+        if parent is not None and parent.fastpath is not None:
+            self.fast_parent = parent
+            parent.fast_children.append(self)
+        
+        for child in self.children:
+            child.set_fastpath(self if self.fastpath is not None else parent)
 
-def extract_sizes_from_text(text: str) -> List[List[int]]:
-    """Extract sizes array from text, handling nested arrays properly."""
-    # Look for sizes = [...] pattern, handling nested arrays
-    match = re.search(r'sizes\s*=\s*(\[[\[\]\d,\s]+\])', text)
-    if match:
-        try:
-            sizes_str = match.group(1)
-            return json.loads(sizes_str.replace("'", '"'))
-        except:
-            pass
-    return []
+    def compute_stream_timeline(self) -> Dict[int, Optional[TimeRange]]:
+        for child in self.children:
+            timelines = child.compute_stream_timeline()
+            for stream, range in timelines.items():
+                if self.timeline.get(stream, None) is None:
+                    self.timeline[stream] = TimeRange(range.startNs, range.endNs)
+                else:
+                    self.timeline[stream].startNs = min(self.timeline[stream].startNs, range.startNs)
+                    self.timeline[stream].endNs = max(self.timeline[stream].endNs, range.endNs)
+                    self.timeline[stream].durationNs = self.timeline[stream].endNs - self.timeline[stream].startNs
+        for stream, timeline in self.timeline.items():
+            if self.gpu_time is not None:
+                self.gpu_time.startNs = min(self.gpu_time.startNs, timeline.startNs)
+                self.gpu_time.endNs = max(self.gpu_time.endNs, timeline.endNs)
+                self.gpu_time.durationNs = self.gpu_time.endNs - self.gpu_time.startNs
+            else:
+                self.gpu_time = TimeRange(timeline.startNs, timeline.endNs)
+        return self.timeline
+    
 
+    def analyse_step_gpu_time(self):
+        if self.fastpath == 'iteration':
+            result = {}
+            for child in self.fast_children:
+                name, time = child.analyse_step_gpu_time()
+                if name is not None:
+                    result[name] = time
+            return result
+        elif self.fastpath == 'step':
+                return self.step, self.gpu_time
+        return None, None
+    
 
-def calculate_tensor_bytes(sizes: List[List[int]], dtype_size: int = 4) -> int:
-    total = 0
-    for size_list in sizes:
-        if size_list:
-            prod = 1
-            for dim in size_list:
-                prod *= dim
-            total += prod * dtype_size
-    return total
+class CudaNode(BaseNode):
+    def __init__(self, event: TraceProcessEvent):
+        super().__init__(event)
+        self.name = event.name
 
+        if getattr(event, 'cudaEvent', None) is not None:
+            cuda_event : CudaEvent = event.cudaEvent
+            if cuda_event.startNs != 0 and cuda_event.endNs != 0:
+                self.gpu_time = TimeRange(cuda_event.startNs, cuda_event.endNs)
+                self.timeline[cuda_event.streamId] = self.gpu_time
+    
+    def compute_stream_timeline(self) -> Dict[int, Optional[TimeRange]]:
+        return self.timeline
+    
+    def analyse_step_gpu_time(self, **kwargs):
+        return None
 
 # ============== 主分析器类 ==============
 
 class NSYSAnalyzer:
-    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, iteration: int = 16,
-                 rank: Optional[List[int]] = None, detail: bool = False):
+    def __init__(self, json_filepath: str, sqlite_filepath: str, output_dir: str, 
+                 ranks: List[int], iteration: int = 16, detail: bool = False):
         self.json_filepath = json_filepath
         self.sqlite_filepath = sqlite_filepath
         self.output_dir = output_dir
-        self.iteration = iteration
-        self.rank = rank if rank is not None else [0, 1, 2, 3]  # 默认导出所有 device
+        self.target_ranks = ranks
+        self.target_iteration = iteration
         self.detail = detail  # 是否导出详细的 step json
         self.devices: Dict[int, DeviceInfo] = {}  # key: cuda device id
-        self.nvtx_events: List[NvtxEvent] = []
-        self.cuda_events_by_sig_corr: Dict[int, Dict[int, CudaEvent]] = defaultdict(dict)
+        self.sign_to_device: Dict[int, int] = {}  # key: process signature, value: cuda device id
+
+        self.nvtx_events_by_signature: Dict[int, List[NvtxEvent]] = defaultdict(list)
         self.cuda_events_by_signature: Dict[int, List[CudaEvent]] = defaultdict(list)
-        self.cuda_events_by_stream: Dict[str, List[CudaEvent]] = defaultdict(list)
-        self.nvtx_by_signature: Dict[int, List[NvtxEvent]] = defaultdict(list)
-        self.events_by_signature: Dict[int, List[BaseEvent]] = defaultdict(list)
-        self.root_events: Dict[int, List[BaseEvent]] = defaultdict(list)
-        self.step_executions: List[StepGPUExecution] = []
-        self.copy_operations: List[CopyOperation] = []
-        self.bugs: List[str] = []
-        self.iterations: Dict[int, List[NvtxEvent]] = defaultdict(list)
-        self.string_table: Dict[str, str] = {}
-        self.sig_to_device: Dict[int, int] = {}  # process_signature -> main device_id
+        self.trace_events_by_signature: Dict[int, List[TraceProcessEvent]] = defaultdict(list)
 
-    def log_bug(self, message: str):
-        self.bugs.append(message)
-
-    def resolve_string(self, name_id: str) -> str:
-        if name_id in self.string_table:
-            return self.string_table[name_id]
-        return name_id
+        self.root_nodes : Dict[int, List[CudaNode|NvtxNode]] = {}       # device
+        self.iterations : Dict[int, Dict[int, List[NvtxNode]]] = {}     # divice, iteration
 
     def load_devices_from_sqlite(self):
-        """从 sqlite 数据库加载 GPU 设备信息"""
+        """ step1: 从 sqlite 数据库加载 GPU 设备信息 """
+        print("\n")
         print("=" * 80)
-        print("Loading device info from SQLite")
+        print("Step 1: Loading device info from SQLite")
         print("=" * 80)
 
         conn = sqlite3.connect(self.sqlite_filepath)
         cursor = conn.cursor()
 
         # 从 TARGET_INFO_GPU 表读取设备信息
-        cursor.execute('SELECT id, name, busLocation, cuDevice FROM TARGET_INFO_GPU')
+        cursor.execute('SELECT name, busLocation, cuDevice FROM TARGET_INFO_GPU')
         rows = cursor.fetchall()
 
         for row in rows:
-            nsys_gpu_id, name, bus_location, cu_device = row
+            name, bus_location, cu_device = row
             device_info = DeviceInfo(
-                device_id=cu_device,      # CUDA device id
-                nsys_gpu_id=nsys_gpu_id,
                 name=name,
-                pcie_bus=bus_location     # e.g., "0009:01:00.0"
+                deviceId=cu_device,      # CUDA device id
+                pcieBus=bus_location     # e.g., "0009:01:00.0"
             )
             self.devices[cu_device] = device_info
-            print(f"  Device {cu_device}: {name}, PCIe={bus_location}")
+        
+        for key in sorted(self.devices.keys()):
+            print(f"  Device {self.devices[key].deviceId}: {self.devices[key].name}, PCIe={self.devices[key].pcieBus}")
 
         conn.close()
 
+
     def load_and_parse(self):
-        print("\n" + "=" * 80)
-        print("Step 1-4: Loading and parsing events")
+        """ step2: 加载 JSON 文件并解析事件 """
+        print("\n")
+        print("=" * 80)
+        print("Step 2: Loading and parsing events")
         print("=" * 80)
 
         line_count = 0
         nvtx_count = 0
-        cuda_api_count = 0
-        cuda_kernel_count = 0
+        cuda_count = 0
+        trace_count = 0
+
+        global STRING_TABLE
 
         with open(self.json_filepath, 'r') as f:
             for line in f:
@@ -403,20 +388,29 @@ class NSYSAnalyzer:
                     continue
                 try:
                     record = json.loads(line)
-                    event_type = record.get("Type")
+                    event_type = record.get('Type', None) if record.get('type', None) == None else record.get('type')
 
-                    if "id" in record and "value" in record:
-                        self.string_table[record["id"]] = record["value"]
-
-                    if event_type == TYPE_NVTX_59 or event_type == TYPE_NVTX_75:
-                        self._parse_nvtx_event(record, event_type)
+                    if event_type == TYPE_STRING:
+                        STRING_TABLE[int(record['id'])] = record['value']
+                    elif event_type == TYPE_NVTX_RANGE:
+                        event = NvtxEvent.from_dict(record['NvtxEvent'], type=event_type)
+                        self.nvtx_events_by_signature[event.signature].append(event)
                         nvtx_count += 1
-                    elif event_type in (TYPE_TRACE_PROCESS_47, TYPE_TRACE_PROCESS_48):
-                        self._parse_trace_process_event(record)
-                        cuda_api_count += 1
-                    elif event_type in (TYPE_CUDA_79, TYPE_CUDA_80, TYPE_CUDA_106):
-                        self._parse_cuda_event(record, event_type)
-                        cuda_kernel_count += 1
+                    elif event_type in (TYPE_TRACE, TYPE_TRACE_KERNEL):
+                        event = TraceProcessEvent.from_dict(record['TraceProcessEvent'], type=event_type)
+                        self.trace_events_by_signature[event.signature].append(event)
+                        trace_count += 1
+                    elif event_type in (TYPE_CUDA_KERNEL, TYPE_CUDA_MEMCPY, TYPE_CUDA_SYNC_SRC, TYPE_CUDA_SYNC_DST):
+                        event = CudaEvent.from_dict(record['CudaEvent'], type=event_type)
+                        self.cuda_events_by_signature[event.signature].append(event)
+                        cuda_count += 1
+
+                        if event_type != TYPE_CUDA_SYNC_SRC:
+                            if self.sign_to_device.get(event.signature, None) is None:
+                                self.sign_to_device[event.signature] = event.deviceId
+                            else:
+                                assert self.sign_to_device[event.signature] == event.deviceId
+
                 except json.JSONDecodeError:
                     pass
 
@@ -424,2268 +418,161 @@ class NSYSAnalyzer:
                 if line_count % 100000 == 0:
                     print(f"  Processed {line_count} lines...")
 
+        for sig, device in self.sign_to_device.items():
+            self.devices[device].signatures.append(sig)
+
         print(f"\nTotal lines: {line_count}")
         print(f"NVTX events: {nvtx_count}")
-        print(f"CUDA API events: {cuda_api_count}")
-        print(f"CUDA kernel events: {cuda_kernel_count}")
-        print(f"Unique process signatures: {len(self.cuda_events_by_sig_corr)}")
+        print(f"CUDA API events: {trace_count}")
+        print(f"CUDA kernel events: {cuda_count}")
+        print(f"Device's signatures:")
+        for key in sorted(self.devices.keys()):
+            print(f"  Device {self.devices[key].deviceId}: {self.devices[key].name}, PCIe={self.devices[key].pcieBus}, signatures={[f'0x{value:06x}' for value in self.devices[key].signatures]}")
 
-    def _build_sig_to_device_mapping(self):
-        """Build mapping from process_signature to main device_id based on CUDA events"""
-        print("\n" + "=" * 80)
-        print("Building process_signature to device mapping")
-        print("=" * 80)
-
-        sig_device_counts: Dict[int, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
-
-        for sig, cuda_events in self.cuda_events_by_signature.items():
-            for evt in cuda_events:
-                if evt.device_id is not None and evt.device_id >= 0:
-                    sig_device_counts[sig][evt.device_id] += 1
-
-        for sig, device_counts in sig_device_counts.items():
-            if device_counts:
-                # Find device with most events
-                main_device = max(device_counts.items(), key=lambda x: x[1])[0]
-                self.sig_to_device[sig] = main_device
-
-        print(f"Built mapping for {len(self.sig_to_device)} process signatures:")
-        for sig, device_id in sorted(self.sig_to_device.items()):
-            devices = sig_device_counts[sig]
-            print(f"  Sig {sig} -> Device {device_id} {dict(devices)}")
-
-    def _parse_nvtx_event(self, record: Dict, nvtx_type: int):
-        nvtx_data = record.get("NvtxEvent", {})
-        global_tid_str = nvtx_data.get("GlobalTid", "0")
-        global_tid = int(global_tid_str)
-        tid_info = parse_tid_structure(global_tid)
-
-        text = nvtx_data.get("Text", "")
-        start_ns = int(nvtx_data.get("Timestamp", "0"))
-        end_ns = int(nvtx_data.get("EndTimestamp", "0")) if "EndTimestamp" in nvtx_data else start_ns
-        sizes = extract_sizes_from_text(text)
-        iteration = extract_iteration(text)
-
-        nvtx_event = NvtxEvent(
-            cpu_start_ns=start_ns,
-            cpu_end_ns=end_ns,
-            cpu_duration_ns=end_ns - start_ns,
-            process_signature=tid_info["process_signature"],
-            thread_type=tid_info["thread_type"],
-            is_main_thread=tid_info["is_main_thread"],
-            text=text,
-            global_tid=global_tid_str,
-            domain_id=str(nvtx_data.get("DomainId", "0")),
-            iteration=iteration,
-            step_type=extract_step_type(text),
-            nvtx_type=nvtx_type,
-            raw_data=nvtx_data,
-            sizes=sizes
-        )
-
-        self.nvtx_events.append(nvtx_event)
-        self.nvtx_by_signature[tid_info["process_signature"]].append(nvtx_event)
-
-        if iteration is not None:
-            self.iterations[iteration].append(nvtx_event)
-
-    def _parse_trace_process_event(self, record: Dict):
-        trace_data = record.get("TraceProcessEvent", {})
-        global_tid_str = trace_data.get("globalTid", "0")
-        global_tid = int(global_tid_str)
-        tid_info = parse_tid_structure(global_tid)
-
-        correlation_id = int(trace_data.get("correlationId", 0))
-        start_ns = int(trace_data.get("startNs", "0"))
-        end_ns = int(trace_data.get("endNs", "0"))
-
-        sig = tid_info["process_signature"]
-
-        if correlation_id in self.cuda_events_by_sig_corr[sig]:
-            existing = self.cuda_events_by_sig_corr[sig][correlation_id]
-            if existing.cpu_start_ns is not None and correlation_id != 0:
-                self.log_bug(f"Duplicate TraceProcessEvent for correlation_id={correlation_id}, sig={sig}")
-            else:
-                existing.cpu_start_ns = start_ns
-                existing.cpu_end_ns = end_ns
-                existing.cpu_duration_ns = end_ns - start_ns
-                existing.global_tid = global_tid_str
-        else:
-            cuda_event = CudaEvent(
-                cpu_start_ns=start_ns,
-                cpu_end_ns=end_ns,
-                cpu_duration_ns=end_ns - start_ns,
-                process_signature=sig,
-                thread_type=tid_info["thread_type"],
-                is_main_thread=tid_info["is_main_thread"],
-                correlation_id=correlation_id,
-                global_pid=None,
-                global_tid=global_tid_str,
-                raw_data=trace_data
-            )
-            self.cuda_events_by_sig_corr[sig][correlation_id] = cuda_event
-
-    def _parse_cuda_event(self, record: Dict, event_type: int):
-        cuda_data = record.get("CudaEvent", {})
-        global_pid_str = cuda_data.get("globalPid", "0")
-        global_pid = int(global_pid_str)
-        sig = get_process_signature_from_id(global_pid)
-
-        correlation_id = int(cuda_data.get("correlationId", 0))
-        start_ns = int(cuda_data.get("startNs", "0"))
-        end_ns = int(cuda_data.get("endNs", "0"))
-
-        kernel_data = cuda_data.get("kernel", {})
-        kernel_name_id = str(kernel_data.get("demangledName", ""))
-        short_name_id = str(kernel_data.get("shortName", ""))
-
-        is_memcpy = False
-        memcpy_type = None
-        memcpy_size = None
-
-        if event_type == TYPE_CUDA_80:
-            is_memcpy = True
-            memcpy_data = cuda_data.get("memcpy", {})
-            copy_kind = int(memcpy_data.get("copyKind", 0))
-            memcpy_size = int(memcpy_data.get("sizebytes", 0))
-            # copyKind: 1=HtoD, 2=DtoH, 3=DtoD
-            if copy_kind == 1:
-                memcpy_type = "Memcpy HtoD"
-            elif copy_kind == 2:
-                memcpy_type = "Memcpy DtoH"
-            elif copy_kind == 3:
-                memcpy_type = "Memcpy DtoD"
-            else:
-                memcpy_type = f"Memcpy (kind={copy_kind})"
-
-        device_id = int(cuda_data.get("deviceId", -1))
-        stream_id = str(cuda_data.get("streamId", "0"))
-
-        # 检测是否为同步事件 (eventClass=5 或有 sync 字段)
-        is_sync = False
-        sync_type = None
-        event_class = cuda_data.get("eventClass", 0)
-        sync_data = cuda_data.get("sync", {})
-        if event_class == 5 or sync_data:
-            is_sync = True
-            sync_type = sync_data.get("syncType", "SYNC") if sync_data else "SYNC"
-
-        if correlation_id in self.cuda_events_by_sig_corr[sig]:
-            existing = self.cuda_events_by_sig_corr[sig][correlation_id]
-            if existing.gpu_start_ns is not None and correlation_id != 0:
-                self.log_bug(f"Duplicate CudaEvent for correlation_id={correlation_id}, sig={sig}")
-            else:
-                existing.gpu_start_ns = start_ns
-                existing.gpu_end_ns = end_ns
-                existing.gpu_duration_ns = end_ns - start_ns
-                existing.device_id = device_id
-                existing.stream_id = stream_id
-                existing.global_pid = global_pid_str
-                existing.is_memcpy = is_memcpy or existing.is_memcpy
-                existing.is_sync = is_sync or existing.is_sync
-                # Update kernel names if not already set
-                if not existing.short_name and short_name_id:
-                    existing.short_name = short_name_id
-                if not existing.kernel_name and kernel_name_id:
-                    existing.kernel_name = kernel_name_id
-                if memcpy_type:
-                    existing.memcpy_type = memcpy_type
-                if memcpy_size:
-                    existing.memcpy_size_bytes = memcpy_size
-                if sync_type:
-                    existing.sync_type = sync_type
-        else:
-            cuda_event = CudaEvent(
-                gpu_start_ns=start_ns,
-                gpu_end_ns=end_ns,
-                gpu_duration_ns=end_ns - start_ns,
-                process_signature=sig,
-                thread_type=ThreadType.UNKNOWN,
-                is_main_thread=False,
-                device_id=device_id,
-                stream_id=stream_id,
-                correlation_id=correlation_id,
-                global_pid=global_pid_str,
-                kernel_name=kernel_name_id,
-                short_name=short_name_id,
-                is_memcpy=is_memcpy,
-                memcpy_type=memcpy_type,
-                memcpy_size_bytes=memcpy_size,
-                is_sync=is_sync,
-                sync_type=sync_type,
-                raw_data=cuda_data
-            )
-            self.cuda_events_by_sig_corr[sig][correlation_id] = cuda_event
 
     def build_event_tree(self):
         print("\n" + "=" * 80)
-        print("Step 5: Building event tree")
+        print("Step 3: Building event tree")
         print("=" * 80)
 
-        # 检查 CudaEvent 是否有 CPU 时间
-        events_without_cpu = 0
+        for rank in self.target_ranks:
+            self.iterations[rank] = {}
+            # 1. 将 cuda event 和 trace event 匹配
+            cpu_events : List[TraceProcessEvent|NvtxEvent] = []
+            gpu_events : List[CudaEvent] = []
 
-        for sig, corr_dict in self.cuda_events_by_sig_corr.items():
-            for cuda_event in corr_dict.values():
-                # 检查是否有 CPU 时间
-                if not cuda_event.has_cpu_time():
-                    self.log_bug(f"CudaEvent without CPU time: correlation_id={cuda_event.correlation_id}, sig={sig}")
-                    events_without_cpu += 1
-                    continue
+            maps : Dict[int, CudaEvent] = {}
+            for sign, device in self.sign_to_device.items():
+                if device == rank:
+                    cpu_events.extend(self.trace_events_by_signature.get(sign, []))
+                    gpu_events.extend(self.cuda_events_by_signature.get(sign, []))
+            
+            match = 0
+            detach = 0
+            for cpu_event in cpu_events:
+                maps[cpu_event.correlationId] = cpu_event
+            for gpu_event in gpu_events:
+                if getattr(gpu_event, 'correlationId', None) is not None:
+                    if maps.get(gpu_event.correlationId, None) is not None:
+                        match += 1
+                        cpu_event = maps[gpu_event.correlationId]
+                        assert getattr(cpu_event, 'cudaEvent', None) == None, \
+                            f"Error: correlationId {gpu_event.correlationId} of {gpu_event} " \
+                            f"already matched with another cudaEvent {getattr(cpu_event, 'cudaEvent')}"
+                        setattr(gpu_event, 'cudaEvent', cpu_event)
+                    else:
+                        detach += 1
+            print(f"device {rank}: matched {match} TraceProcessEvent with CudaEvent, detached {detach} CudaEvent without TraceProcessEvent")
 
-                self.cuda_events_by_signature[sig].append(cuda_event)
-                if cuda_event.stream_id and cuda_event.gpu_start_ns is not None:
-                    self.cuda_events_by_stream[cuda_event.stream_id].append(cuda_event)
+            # 2. 按时间顺序排序
+            for sign, device in self.sign_to_device.items():
+                if device == rank:
+                    cpu_events.extend(self.nvtx_events_by_signature.get(sign, []))
+            cpu_events = sorted(cpu_events, key=lambda e: e.startNs)
 
-        print(f"Events without CPU time (skipped): {events_without_cpu}")
+            # 3. 构建 NvtxNode 和 CudaNode
+            nodes = []
+            for event in cpu_events:
+                if isinstance(event, NvtxEvent):
+                    node = NvtxNode(event)
+                    nodes.append(node)
+                    if node.fastpath == 'iteration':
+                        self.iterations[rank][node.iteration] = node
+                else:
+                    nodes.append(CudaNode(event))
 
-        for stream_id in self.cuda_events_by_stream:
-            self.cuda_events_by_stream[stream_id].sort(key=lambda e: e.gpu_start_ns if e.gpu_start_ns is not None else 0)
+            # 3. 构建 event tree
+            total_events = 0
+            stack : List[CudaNode|NvtxNode] = []
+            roots : List[CudaNode|NvtxNode] = []
 
-        all_signatures = set(self.cuda_events_by_signature.keys()) | set(self.nvtx_by_signature.keys())
-
-        for sig in all_signatures:
-            nvtx_list = self.nvtx_by_signature.get(sig, [])
-            cuda_list = self.cuda_events_by_signature.get(sig, [])
-            all_events = nvtx_list + cuda_list
-            # 使用 get_sort_key() 排序
-            all_events.sort(key=lambda e: e.get_sort_key())
-            self.events_by_signature[sig] = all_events
-
-        print(f"Built event lists for {len(self.events_by_signature)} process signatures")
-
-        total_events = 0
-        for sig, events in self.events_by_signature.items():
-            total_events += len(events)
-            stack = []
-            roots = []
-
-            for event in events:
-                event.parent = None
-                event.children = []
+            for node in nodes:
+                node.parent = None
+                node.children = []
 
                 found_parent = False
                 while stack:
                     parent = stack[-1]
                     # 检查时间包含关系
-                    if (parent.cpu_start_ns is not None and
-                        event.cpu_start_ns is not None and
-                        parent.cpu_start_ns <= event.cpu_start_ns and
-                        event.cpu_end_ns <= parent.cpu_end_ns):
-                        event.parent = parent
-                        parent.children.append(event)
+                    if (parent.cpu_time.startNs <= node.cpu_time.startNs and \
+                        parent.cpu_time.endNs >= node.cpu_time.endNs):
+                        node.parent = parent
+                        parent.children.append(node)
                         found_parent = True
                         break
                     else:
                         stack.pop()
 
                 if not found_parent:
-                    roots.append(event)
+                    roots.append(node)
 
-                stack.append(event)
+                stack.append(node)
 
-            self.root_events[sig] = roots
+            self.root_nodes[rank] = roots
 
-        print(f"Total events in trees: {total_events}")
+            for i, iteration in self.iterations[rank].items():
+                iteration.set_fastpath()
+
+            print(f"device {rank}: built event tree with {len(roots)} root nodes and total {total_events} events")
+            for i, root in enumerate(roots):
+                    print(f"  root[{i}].name = {root.name} ")
+
+
+    def compute_stream_timeline(self):
+        print("\n" + "=" * 80)
+        print("Step 4: Computing stream timelines")
+        print("=" * 80)
+
+        for rank in self.target_ranks:
+            print(f"device {rank}: computing stream timelines...")
+            for node in self.root_nodes[rank]:
+                node.compute_stream_timeline()
+
 
     def analyze_steps(self):
         print("\n" + "=" * 80)
-        print("Step 6: Analyzing step GPU execution times")
+        print("Step 5: Analyzing step GPU execution times")
         print("=" * 80)
 
-        all_iterations = set()
-        for nvtx in self.nvtx_events:
-            if nvtx.iteration is not None:
-                all_iterations.add(nvtx.iteration)
+        for rank in self.target_ranks:
+            for it, node in self.iterations[rank].items():
+                if it == self.target_iteration:
+                    result = node.analyse_step_gpu_time()
+                    print(result['forward_step[0]'])
+                    # 制表...
+        
 
-        print(f"Found {len(all_iterations)} unique iterations: {sorted(all_iterations)}")
-
-        for iteration_num in sorted(all_iterations)[:2]:
-            print(f"\n{'='*60}")
-            print(f"Analyzing iteration {iteration_num}")
-            print('='*60)
-
-            # 找到 iteration 的时间范围
-            iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-            if not iteration_events:
-                continue
-
-            iteration_start = min(e.cpu_start_ns for e in iteration_events)
-            iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-            # 查找该时间范围内的 step 事件
-            steps_in_iteration = []
-            for nvtx in self.nvtx_events:
-                if nvtx.step_type not in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                    continue
-                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                    steps_in_iteration.append(nvtx)
-
-            # 按 step_type 分组
-            by_type = defaultdict(list)
-            for step in steps_in_iteration:
-                by_type[step.step_type].append(step)
-
-            print(f"  Found: {len(by_type.get(StepType.FORWARD, []))} forward, "
-                  f"{len(by_type.get(StepType.BACKWARD, []))} backward, "
-                  f"{len(by_type.get(StepType.OPTIMIZER, []))} optimizer")
-
-            # 分析每种类型的第一个
-            for step_type in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                if step_type not in by_type:
-                    continue
-                steps = by_type[step_type]
-                steps.sort(key=lambda e: e.cpu_start_ns)
-                first_step = steps[0]
-                self._analyze_step_gpu_time(iteration_num, first_step, step_type)
-
-    def _analyze_step_gpu_time(self, iteration: int, step_nvtx: NvtxEvent, step_type: StepType):
-        step_name = step_type.value
-
-        all_cuda_events = []
-
-        def collect_cuda_events(event: BaseEvent):
-            if isinstance(event, CudaEvent):
-                all_cuda_events.append(event)
-            elif isinstance(event, NvtxEvent):
-                for child in event.children:
-                    collect_cuda_events(child)
-
-        collect_cuda_events(step_nvtx)
-
-        gpu_events = [e for e in all_cuda_events if e.gpu_start_ns is not None]
-
-        if not gpu_events:
-            print(f"  iteration {iteration}: {step_name}[{iteration}] (sig={step_nvtx.process_signature}) - No GPU events")
-            return
-
-        first_cuda = min(gpu_events, key=lambda e: e.gpu_start_ns)
-        last_cuda = max(gpu_events, key=lambda e: e.gpu_end_ns)
-        gpu_duration = last_cuda.gpu_end_ns - first_cuda.gpu_start_ns
-
-        print(f"\n  iteration {iteration}: {step_name}[{iteration}] (sig={step_nvtx.process_signature})")
-        print(f"    First GPU: {first_cuda.gpu_start_ns} ns")
-        print(f"    Last GPU: {last_cuda.gpu_end_ns} ns")
-        print(f"    Duration: {gpu_duration} ns ({gpu_duration / 1e6:.2f} ms)")
-        print(f"    Total CUDA events: {len(all_cuda_events)}")
-        print(f"    GPU events: {len(gpu_events)}")
-
-        execution = StepGPUExecution(
-            iteration=iteration,
-            step_type=step_type,
-            process_signature=step_nvtx.process_signature,
-            first_cuda_start_ns=first_cuda.gpu_start_ns,
-            last_cuda_end_ns=last_cuda.gpu_end_ns,
-            gpu_duration_ns=gpu_duration,
-            cuda_events=all_cuda_events,
-            nvtx_event=step_nvtx
-        )
-        self.step_executions.append(execution)
-
-    def analyze_offloading(self):
+    def analyze_fine_grained_offloading(self):
         print("\n" + "=" * 80)
-        print("Step 7: Analyzing FineGrainedOffloading operations")
+        print("Step 6: Analyzing fine-grained offloading")
         print("=" * 80)
 
-        offloading_nvtx = []
-        for nvtx in self.nvtx_events:
-            if "FineGrainedOffloading" in nvtx.text:
-                offloading_nvtx.append(nvtx)
+        def _fine_grained_group(node: NvtxNode, offload: str):
+            result = {}
+            for n in node.fast_children:
+                if n.fastpath == f'fine_{offload}':
+   
+        for rank in self.target_ranks:
+            fb = self.iterations[rank][self.target_iteration].search_for_fastpath('forward_step[0]')
+            bb = self.iterations[rank][self.target_iteration].search_for_fastpath('backward_step[0]')
 
-        print(f"Found {len(offloading_nvtx)} FineGrainedOffloading events")
+            
 
-        # 按迭代分组
-        by_iteration = defaultdict(list)
-        for nvtx in offloading_nvtx:
-            iteration = self._infer_iteration(nvtx)
-            by_iteration[iteration].append(nvtx)
+            # 统计第一个 forward step & 第一个 backward step
+            # 各个 group 第一次出现时的数据
 
-        for iteration in sorted(by_iteration.keys())[:2]:
-            print(f"\n--- Iteration {iteration} ---")
-            iteration_events = by_iteration[iteration]
 
-            commit_events = [e for e in iteration_events if "Commit" in e.text]
-            start_events = [e for e in iteration_events if "Start" in e.text]
 
-            print(f"  Commit (offload) events: {len(commit_events)}")
-            print(f"  Start (reload) events: {len(start_events)}")
 
-            for nvtx in commit_events[:5]:
-                self._analyze_offloading_operation(nvtx, "offload", iteration)
 
-            for nvtx in start_events[:5]:
-                self._analyze_offloading_operation(nvtx, "reload", iteration)
-
-    def _infer_iteration(self, nvtx: NvtxEvent) -> int:
-        nvtx_time = nvtx.cpu_start_ns
-        for iteration, events in self.iterations.items():
-            for event in events:
-                if event.cpu_start_ns <= nvtx_time <= event.cpu_end_ns:
-                    return iteration
-        return 0
-
-    # 关注的 stream 列表
-    TARGET_STREAMS = {'7', '47', '43', '59', '170', '172', '171', '169', '31', '35'}
-
-    def calculate_stream_gpu_time(self):
-        """计算每个 NvtxEvent 在指定 stream 上的 GPU 执行时间"""
-        print("\n" + "=" * 80)
-        print("Calculating stream GPU time for NvtxEvents (target streams only)")
-        print("=" * 80)
-
-        # 只统计关注的 stream
-        all_streams = set()
-        for sig, nvtx_list in self.nvtx_by_signature.items():
-            for nvtx in nvtx_list:
-                # 收集该 NvtxEvent 下的所有 CudaEvent
-                cuda_events = []
-
-                def collect_cuda(evt: BaseEvent):
-                    if isinstance(evt, CudaEvent) and evt.stream_id:
-                        # 只收集关注的 stream
-                        if evt.stream_id in self.TARGET_STREAMS:
-                            cuda_events.append(evt)
-                            all_streams.add(evt.stream_id)
-                    elif isinstance(evt, NvtxEvent):
-                        for child in evt.children:
-                            collect_cuda(child)
-
-                for child in nvtx.children:
-                    collect_cuda(child)
-
-                # 按 stream 分组计算 GPU 时间
-                stream_events = defaultdict(list)
-                for evt in cuda_events:
-                    if evt.gpu_start_ns is not None and not evt.is_sync:
-                        stream_events[evt.stream_id].append(evt)
-
-                # 计算每个 stream 上的 GPU 时间范围
-                for stream_id, events in stream_events.items():
-                    gpu_starts = [e.gpu_start_ns for e in events if e.gpu_start_ns is not None]
-                    gpu_ends = [e.gpu_end_ns for e in events if e.gpu_end_ns is not None]
-                    if gpu_starts and gpu_ends:
-                        nvtx.stream_gpu_time[stream_id] = (
-                            min(gpu_starts),
-                            max(gpu_ends),
-                            max(gpu_ends) - min(gpu_starts)
-                        )
-
-        print(f"Found {len(all_streams)} target streams")
-        print(f"Streams: {sorted(all_streams)}")
-
-        # 统计有多少 NvtxEvent 有 stream GPU 时间
-        nvtx_with_stream_time = sum(1 for sig in self.nvtx_by_signature
-                                     for nvtx in self.nvtx_by_signature[sig]
-                                     if nvtx.stream_gpu_time)
-        print(f"NvtxEvents with stream GPU time: {nvtx_with_stream_time}")
-
-        return sorted(all_streams)
-
-    def build_stream_trees(self, streams: List[str]):
-        """为每个 stream 构建树形结构"""
-        print("\n" + "=" * 80)
-        print("Building stream-level trees")
-        print("=" * 80)
-
-        for stream_id in streams:
-            # 收集在该 stream 上有 GPU 时间的 NvtxEvent
-            nvtx_on_stream = []
-
-            for sig in self.nvtx_by_signature:
-                for nvtx in self.nvtx_by_signature[sig]:
-                    if stream_id in nvtx.stream_gpu_time:
-                        nvtx_on_stream.append(nvtx)
-
-            if not nvtx_on_stream:
-                continue
-
-            # 按 stream GPU 开始时间排序
-            nvtx_on_stream.sort(key=lambda e: e.stream_gpu_time[stream_id][0])
-
-            # 构建树
-            stack = []
-            for nvtx in nvtx_on_stream:
-                # 初始化该 stream 的 parent/children
-                if stream_id not in nvtx.stream_parent:
-                    nvtx.stream_parent[stream_id] = None
-                if stream_id not in nvtx.stream_children:
-                    nvtx.stream_children[stream_id] = []
-
-                # 查找 parent
-                while stack:
-                    parent = stack[-1]
-                    parent_start, parent_end, _ = parent.stream_gpu_time[stream_id]
-                    child_start, child_end, _ = nvtx.stream_gpu_time[stream_id]
-
-                    if parent_start <= child_start and child_end <= parent_end:
-                        nvtx.stream_parent[stream_id] = parent
-                        if stream_id not in parent.stream_children:
-                            parent.stream_children[stream_id] = []
-                        parent.stream_children[stream_id].append(nvtx)
-                        break
-                    else:
-                        stack.pop()
-
-                stack.append(nvtx)
-
-            print(f"Stream {stream_id}: {len(nvtx_on_stream)} events, built tree")
-
-    def _analyze_offloading_operation(self, parent_nvtx: NvtxEvent, operation_type: str, iteration: int):
-        module_desc = parent_nvtx.text
-        match = re.search(r'seq\s*=\s*(\d+)', module_desc)
-        seq_id = match.group(1) if match else "unknown"
-
-        total_bytes = calculate_tensor_bytes(parent_nvtx.sizes)
-
-        copy_nvtx_list = []
-        module_name = ""
-
-        for child in parent_nvtx.children:
-            if isinstance(child, NvtxEvent):
-                if "aten::copy_" in child.text.lower():
-                    copy_nvtx_list.append(child)
-                elif "activation" in child.text.lower():
-                    parts = child.text.split()
-                    if len(parts) >= 3:
-                        module_name = parts[-1]
-
-        if not copy_nvtx_list:
-            for child in parent_nvtx.children:
-                if isinstance(child, NvtxEvent):
-                    for grandchild in child.children:
-                        if isinstance(grandchild, NvtxEvent) and "aten::copy_" in grandchild.text.lower():
-                            copy_nvtx_list.append(grandchild)
-
-        if not copy_nvtx_list:
-            return
-
-        memcpy_events = []
-        for copy_nvtx in copy_nvtx_list:
-            for child in copy_nvtx.children:
-                if isinstance(child, CudaEvent) and child.is_memcpy:
-                    memcpy_events.append(child)
-
-        total_bytes_from_copies = sum(calculate_tensor_bytes(c.sizes) for c in copy_nvtx_list)
-        if total_bytes_from_copies > 0:
-            total_bytes = total_bytes_from_copies
-
-        total_memcpy_bytes = 0
-        total_memcpy_duration = 0
-        first_gpu = None
-        last_gpu = None
-
-        for memcpy in memcpy_events:
-            if memcpy.gpu_start_ns:
-                if first_gpu is None or memcpy.gpu_start_ns < first_gpu:
-                    first_gpu = memcpy.gpu_start_ns
-                if last_gpu is None or memcpy.gpu_end_ns > last_gpu:
-                    last_gpu = memcpy.gpu_end_ns
-
-                if len(memcpy_events) > 0:
-                    event_bytes = total_bytes // len(memcpy_events)
-                else:
-                    event_bytes = 0
-                total_memcpy_bytes += event_bytes
-                total_memcpy_duration += memcpy.gpu_duration_ns
-
-        throughput = 0
-        if total_memcpy_duration > 0:
-            throughput = (total_memcpy_bytes / (total_memcpy_duration / 1e9)) / 1e9
-
-        print(f"\n  {operation_type.upper()} - seq={seq_id}, module={module_name}")
-        print(f"    Process sig: {parent_nvtx.process_signature}")
-        print(f"    Total bytes: {total_bytes / 1e6:.2f} MB")
-        print(f"    Copy count: {len(copy_nvtx_list)}")
-        print(f"    Memcpy events: {len(memcpy_events)}")
-        if first_gpu and last_gpu:
-            print(f"    GPU time: {first_gpu} - {last_gpu}")
-        print(f"    Throughput: {throughput:.2f} GB/s")
-
-        if memcpy_events and first_gpu and last_gpu:
-            is_blocking = self._analyze_copy_blocking(memcpy_events, first_gpu, last_gpu)
-        else:
-            is_blocking = False
-
-        copy_op = CopyOperation(
-            iteration=iteration,
-            step_type=parent_nvtx.step_type,
-            process_signature=parent_nvtx.process_signature,
-            parent_nvtx=parent_nvtx,
-            module_name=module_name,
-            operation_type=operation_type,
-            operation_desc=module_desc,
-            copy_count=len(copy_nvtx_list),
-            copy_nvtx_events=copy_nvtx_list,
-            sizes_per_copy=[e.sizes for e in copy_nvtx_list if e.sizes],
-            total_bytes=total_bytes,
-            memcpy_events=memcpy_events,
-            memcpy_total_bytes=total_memcpy_bytes,
-            throughput_gbps=throughput,
-            is_blocking=is_blocking,
-            gpu_start_ns=first_gpu,
-            gpu_end_ns=last_gpu
-        )
-        self.copy_operations.append(copy_op)
-
-    def _analyze_copy_blocking(self, memcpy_events: List[CudaEvent], copy_start: int, copy_end: int) -> bool:
-        if not memcpy_events:
-            return False
-
-        copy_stream = memcpy_events[0].stream_id
-        concurrent_kernels = []
-
-        for stream_id, events in self.cuda_events_by_stream.items():
-            if stream_id == copy_stream:
-                continue
-
-            for event in events:
-                if event.gpu_start_ns is None or event.is_memcpy:
-                    continue
-
-                if (event.gpu_start_ns < copy_end and
-                    event.gpu_end_ns > copy_start):
-                    concurrent_kernels.append(event)
-
-        has_concurrent = len(concurrent_kernels) > 0
-
-        print(f"    Blocking analysis:")
-        print(f"      Concurrent kernels: {len(concurrent_kernels)}")
-        print(f"      Is blocking: {not has_concurrent}")
-
-        return not has_concurrent
-
-    def print_bugs(self):
-        non_zero_bugs = [b for b in self.bugs if "correlation_id=0" not in b]
-        if non_zero_bugs:
-            print("\n" + "=" * 80)
-            print(f"BUGS FOUND (excluding correlation_id=0): {len(non_zero_bugs)}")
-            print("=" * 80)
-            for bug in non_zero_bugs[:20]:
-                print(f"  - {bug}")
-            if len(non_zero_bugs) > 20:
-                print(f"  ... and {len(non_zero_bugs) - 20} more")
-
-    def export_iteration_data(self, iteration_num: int, output_dir: str):
-        """导出 iteration 16 在 gpu0 上的第一个 forward_step、backward_step、optimizer_step"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 找到 iteration 的时间范围
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            print(f"Iteration {iteration_num} not found")
-            return
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        print(f"\nExporting gpu0 steps for iteration {iteration_num}")
-
-        # 查找该时间范围内的 step 事件，且主要在 gpu0 上运行
-        steps_in_iteration = []
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type not in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                continue
-            if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                # 检查是否在 gpu0 上运行
-                device_id = self._find_step_device(nvtx)
-                if device_id == 0:  # 只保留 gpu0 的事件
-                    steps_in_iteration.append((nvtx, device_id))
-
-        # 按 step_type 分组
-        by_type = defaultdict(list)
-        for nvtx, device_id in steps_in_iteration:
-            by_type[nvtx.step_type].append(nvtx)
-
-        print(f"  Found on gpu0: {len(by_type.get(StepType.FORWARD, []))} forward, "
-              f"{len(by_type.get(StepType.BACKWARD, []))} backward, "
-              f"{len(by_type.get(StepType.OPTIMIZER, []))} optimizer")
-
-        # 找到每种类型的第一个
-        for step_type in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-            if step_type not in by_type:
-                continue
-
-            steps = by_type[step_type]
-            steps.sort(key=lambda e: e.cpu_start_ns)
-            first_step = steps[0]
-
-            # 获取 gpu0 的 pcie bus 地址
-            device_info = self.devices.get(0)
-            pcie_suffix = device_info.pcie_bus.replace(":", "_") if device_info else "unknown"
-            self._export_step_data(first_step, output_dir, iteration_num, pcie_suffix)
-
-    def export_stream_trees(self, iteration_num: int, output_dir: str, streams: List[str]):
-        """导出指定 iteration 的 step 在每个 stream 上的树（所有 steps，所有 devices）
-
-        输出格式：{output_dir}/{pcie_bus}/{step_name}/stream_{id}.json
-        """
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 找到 iteration 的时间范围
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            print(f"Iteration {iteration_num} not found")
-            return
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        print(f"\nExporting stream trees for iteration {iteration_num}")
-
-        # 查找该时间范围内的 step 事件，按 device 分组
-        steps_by_device: Dict[int, List[NvtxEvent]] = defaultdict(list)
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type not in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                continue
-            if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                device_id = self._find_step_device(nvtx)
-                if device_id is not None:
-                    steps_by_device[device_id].append(nvtx)
-
-        # 为每个 device 导出（只导出指定的 rank）
-        for device_id, steps_in_iteration in steps_by_device.items():
-            # 跳过未指定的 rank
-            if device_id not in self.rank:
-                continue
-            device_info = self.devices.get(device_id)
-            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
-            pcie_suffix = pcie_bus.replace(":", "_")
-
-            # 创建 device 目录
-            device_dir = os.path.join(output_dir, pcie_suffix)
-            os.makedirs(device_dir, exist_ok=True)
-
-            print(f"\n  Device {device_id} (PCIe: {pcie_bus}): {len(steps_in_iteration)} steps")
-
-            # 按 step_type 分组
-            by_type = defaultdict(list)
-            for nvtx in steps_in_iteration:
-                by_type[nvtx.step_type].append(nvtx)
-
-            # 为每个 step 生成 stream tree
-            for step_type in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                if step_type not in by_type:
-                    continue
-
-                steps = by_type[step_type]
-                steps.sort(key=lambda e: e.cpu_start_ns)
-
-                print(f"\n    {step_type.value}: {len(steps)} steps")
-
-                # 导出每个 step
-                for step_idx, step in enumerate(steps):
-                    # 找到该 step 涉及的所有 stream
-                    step_streams = [s for s in streams if s in step.stream_gpu_time]
-
-                    if step_idx == 0:
-                        print(f"      Step {step_idx}: {len(step_streams)} streams")
-
-                    # 创建 step 目录
-                    if step_type == StepType.FORWARD:
-                        step_name = f"forward_step[{step_idx}]"
-                    elif step_type == StepType.BACKWARD:
-                        step_name = f"backward_step[{step_idx}]"
-                    else:
-                        step_name = "optimizer_step"
-
-                    step_dir = os.path.join(device_dir, step_name)
-                    os.makedirs(step_dir, exist_ok=True)
-
-                    for stream_id in step_streams:
-                        self._export_stream_tree(step, stream_id, step_dir, step_name)
-
-    def _export_stream_tree(self, step_nvtx: NvtxEvent, stream_id: str, step_dir: str, step_name: str):
-        """导出单个 step 在单个 stream 上的树，递归从 GPU 树构建 stream 树
-
-        输出格式：{step_dir}/stream_{stream_id}.json
-        """
-        filename = os.path.join(step_dir, f"stream_{stream_id}.json")
-
-        def build_stream_tree(evt: BaseEvent, stream_id: str) -> Optional[Dict]:
-            """递归构建 stream 树，返回该节点在指定 stream 上的表示
-
-            返回值: dict 或 None（如果该节点及其子孙都不在该 stream 上执行）
-            """
-            if isinstance(evt, CudaEvent):
-                # CudaEvent: 只保留在该 stream 上执行的
-                if evt.stream_id != stream_id:
-                    return None
-                if evt.gpu_start_ns is None:
-                    return None
-                if evt.is_sync:
-                    # 过滤同步事件（如 cudaStreamWaitEvent）
-                    return None
-
-                # 获取 TraceProcessEvent 的 name 作为 text
-                trace_name = ""
-                if evt.raw_data and 'name' in evt.raw_data:
-                    name_id = str(evt.raw_data.get('name', ''))
-                    if name_id:
-                        trace_name = self.resolve_string(name_id)
-
-                # 获取 cuda event 的 short_name（kernel 名称）
-                shortname = ""
-                if evt.is_memcpy and evt.memcpy_type:
-                    shortname = evt.memcpy_type
-                elif evt.short_name:
-                    shortname = self.resolve_string(evt.short_name)
-                elif evt.kernel_name:
-                    shortname = self.resolve_string(evt.kernel_name)
-
-                result = {
-                    "type": "CudaEvent",
-                    "text": trace_name if trace_name else shortname,
-                    "shortname": shortname,
-                    "stream_id": evt.stream_id,
-                    "correlation_id": evt.correlation_id,
-                    "stream_start_ns": evt.gpu_start_ns,
-                    "stream_end_ns": evt.gpu_end_ns,
-                    "stream_duration_ns": evt.gpu_duration_ns,
-                    "is_memcpy": evt.is_memcpy,
-                }
-                if evt.memcpy_type:
-                    result["memcpy_type"] = evt.memcpy_type
-                if evt.memcpy_size_bytes:
-                    result["memcpy_size_bytes"] = evt.memcpy_size_bytes
-                return result
-
-            elif isinstance(evt, NvtxEvent):
-                # NvtxEvent: 递归收集子节点在该 stream 上的执行
-                stream_children = []
-
-                for child in evt.children:
-                    child_result = build_stream_tree(child, stream_id)
-                    if child_result is not None:
-                        stream_children.append(child_result)
-
-                if stream_children:
-                    # 有子节点在该 stream 上执行，计算该节点的 stream 时间
-                    child_starts = [c.get("stream_start_ns") for c in stream_children if c.get("stream_start_ns") is not None]
-                    child_ends = [c.get("stream_end_ns") for c in stream_children if c.get("stream_end_ns") is not None]
-
-                    if child_starts and child_ends:
-                        stream_start = min(child_starts)
-                        stream_end = max(child_ends)
-                        stream_duration = stream_end - stream_start
-                    else:
-                        stream_start = None
-                        stream_end = None
-                        stream_duration = 0
-
-                    # 对子节点按 stream 开始时间排序
-                    stream_children.sort(key=lambda x: x.get("stream_start_ns", 0) if x.get("stream_start_ns") is not None else 0)
-
-                    return {
-                        "type": "NvtxEvent",
-                        "text": evt.text,
-                        "stream_start_ns": stream_start,
-                        "stream_end_ns": stream_end,
-                        "stream_duration_ns": stream_duration,
-                        "stream_children": stream_children,
-                    }
-                return None
-
-            return None
-
-        # 构建 stream 树
-        result = build_stream_tree(step_nvtx, stream_id)
-
-        if result is None:
-            return
-
-        # 构建输出（根节点包装在列表中）
-        output_data = [result]
-
-        with open(filename, 'w') as f:
-            json.dump(output_data, f, indent=2)
-
-        # 统计信息
-        def count_events(node: Dict) -> Tuple[int, int]:
-            """统计 NvtxEvent 和 CudaEvent 数量"""
-            nvtx_count = 0
-            cuda_count = 0
-            if node.get("type") == "NvtxEvent":
-                nvtx_count = 1
-                for child in node.get("stream_children", []):
-                    nc, cc = count_events(child)
-                    nvtx_count += nc
-                    cuda_count += cc
-            elif node.get("type") == "CudaEvent":
-                cuda_count = 1
-            return nvtx_count, cuda_count
-
-        nvtx_count, cuda_count = count_events(result)
-        print(f"      Exported {step_name} stream {stream_id}: {nvtx_count} NvtxEvents, {cuda_count} CudaEvents")
-
-    def _find_step_device(self, step_nvtx: NvtxEvent) -> Optional[int]:
-        """Find the main device for a step based on its process signature"""
-        # Use pre-built sig_to_device mapping
-        return self.sig_to_device.get(step_nvtx.process_signature)
-
-    def _get_device_from_gpu_time(self, gpu_time_ns: int) -> Optional[int]:
-        """Find the device that executed a GPU event at the given time.
-
-        This works by finding which device's CUDA events include the given timestamp.
-        """
-        for device_id in self.devices:
-            # Get CUDA events for this device
-            device_events = []
-            for sig, events in self.cuda_events_by_signature.items():
-                for evt in events:
-                    if evt.device_id == device_id and evt.gpu_start_ns is not None:
-                        device_events.append(evt)
-
-            # Check if any event on this device contains the given time
-            for evt in device_events:
-                if evt.gpu_start_ns <= gpu_time_ns <= evt.gpu_end_ns:
-                    return device_id
-
-        return None
-
-    def _export_step_data(self, step_nvtx: NvtxEvent, output_dir: str, iteration: int, pcie_suffix: str):
-        """导出单个 step 的数据"""
-        step_name = step_nvtx.step_type.value
-        filename = os.path.join(output_dir, f"iteration_{iteration}_{step_name}_{pcie_suffix}_v3.json")
-
-        def collect_events(event: BaseEvent, depth: int = 0) -> Dict:
-            event_data = {
-                "type": "NvtxEvent" if isinstance(event, NvtxEvent) else "CudaEvent",
-                "cpu_start_ns": event.cpu_start_ns,
-                "cpu_end_ns": event.cpu_end_ns,
-                "cpu_duration_ns": event.cpu_duration_ns,
-                "gpu_start_ns": event.gpu_start_ns,
-                "gpu_end_ns": event.gpu_end_ns,
-                "gpu_duration_ns": event.gpu_duration_ns,
-                "process_signature": event.process_signature,
-                "depth": depth,
-            }
-
-            if isinstance(event, NvtxEvent):
-                event_data["text"] = event.text
-                event_data["iteration"] = event.iteration
-                event_data["step_type"] = event.step_type.value
-                event_data["nvtx_type"] = event.nvtx_type
-                event_data["sizes"] = event.sizes
-            elif isinstance(event, CudaEvent):
-                event_data["kernel_name"] = self.resolve_string(event.kernel_name or "")
-                event_data["correlation_id"] = event.correlation_id
-                event_data["stream_id"] = event.stream_id
-                event_data["device_id"] = event.device_id
-                event_data["is_memcpy"] = event.is_memcpy
-                event_data["memcpy_type"] = event.memcpy_type
-
-            event_data["children"] = []
-            for child in event.children:
-                event_data["children"].append(collect_events(child, depth + 1))
-
-            return event_data
-
-        root_data = collect_events(step_nvtx, 0)
-
-        with open(filename, 'w') as f:
-            json.dump(root_data, f, indent=2)
-
-        print(f"  Exported {step_nvtx.step_type.value} (pcie={pcie_suffix}) to {filename}")
-
-    def export_step_gpu_excel_v2(self, iteration_num: int, output_dir: str):
-        """Export step GPU execution times per stream to Excel (v2 format)
-
-        Output: {output_dir}/{pcie_bus}/summary.xlsx
-
-        Format (same as example4):
-        - Row 1: Title
-        - Row 2: Stream names (GPU Total, Stream 7, Stream 47...), merged 3 cells each
-        - Row 3: Field names (Step Name, start_ns, end_ns, duration_ns...)
-        - Row 4+: Data rows for each step
-        """
-        if not OPENPYXL_AVAILABLE:
-            print("openpyxl not available, skipping Excel export")
-            return
-
-        # Find iteration events
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            print(f"Iteration {iteration_num} not found for Excel export")
-            return
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        # Collect step events per device
-        steps_by_device: Dict[int, List[NvtxEvent]] = defaultdict(list)
-
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type not in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-                continue
-            if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                device_id = self._find_step_device(nvtx)
-                if device_id is not None:
-                    steps_by_device[device_id].append(nvtx)
-
-        # Create one Excel file per device in {pcie_bus}/summary.xlsx（只导出指定的 rank）
-        for device_id, steps in steps_by_device.items():
-            # 跳过未指定的 rank
-            if device_id not in self.rank:
-                continue
-            device_info = self.devices.get(device_id)
-            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
-            pcie_suffix = pcie_bus.replace(":", "_")
-
-            # Create device directory
-            device_dir = os.path.join(output_dir, pcie_suffix)
-            os.makedirs(device_dir, exist_ok=True)
-
-            filename = os.path.join(device_dir, "summary.xlsx")
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "GPU Times"
-
-            # Sort steps by CPU start time to get order of appearance
-            steps.sort(key=lambda e: e.cpu_start_ns)
-
-            # Collect all unique streams across all steps (only target streams)
-            all_streams = set()
-            step_stream_times = {}  # id(step) -> {stream_id -> (start, end, duration)}
-
-            for step in steps:
-                step_streams = {}
-
-                # Get per-stream times from stream_gpu_time (only target streams)
-                stream_starts = []
-                stream_ends = []
-                for stream_id, (gpu_start, gpu_end, gpu_duration) in step.stream_gpu_time.items():
-                    if gpu_start is not None and stream_id in self.TARGET_STREAMS:
-                        step_streams[stream_id] = (gpu_start, gpu_end, gpu_duration)
-                        all_streams.add(stream_id)
-                        stream_starts.append(gpu_start)
-                        stream_ends.append(gpu_end)
-
-                # GPU Total = earliest start and latest end across all target streams
-                if stream_starts and stream_ends:
-                    total_start = min(stream_starts)
-                    total_end = max(stream_ends)
-                    total_duration = total_end - total_start
-                    step_streams['total'] = (total_start, total_end, total_duration)
-                else:
-                    step_streams['total'] = (None, None, None)
-
-                step_stream_times[id(step)] = step_streams
-
-            # Sort streams: 7, 47, 43 first, then others sorted by numeric value
-            priority_streams = ['7', '47', '43']
-            other_streams = sorted([s for s in all_streams if s not in priority_streams],
-                                  key=lambda x: int(x) if x.isdigit() else float('inf'))
-            sorted_streams = priority_streams + other_streams
-
-            # Row 1: Title
-            num_cols = 1 + (len(sorted_streams) + 1) * 3  # Step Name + (Total + streams) * 3
-            ws['A1'] = f"GPU Execution Times - Device {pcie_bus}"
-            ws['A1'].font = Font(bold=True, size=14)
-            end_col_letter = self._get_col_letter(num_cols)
-            ws.merge_cells(f'A1:{end_col_letter}1')
-
-            # Row 2: Stream headers (merged across 3 cells each)
-            col = 2  # Start from column B (A is for step name)
-
-            # GPU Total header
-            ws.cell(row=2, column=col, value="GPU Total")
-            ws.cell(row=2, column=col).font = Font(bold=True)
-            ws.cell(row=2, column=col).fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            ws.cell(row=2, column=col).font = Font(bold=True, color='FFFFFF')
-            ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
-            col += 3
-
-            # Stream headers
-            for stream_id in sorted_streams:
-                ws.cell(row=2, column=col, value=f"Stream {stream_id}")
-                ws.cell(row=2, column=col).font = Font(bold=True)
-                color = '70AD47' if stream_id in priority_streams else 'FFC000'
-                ws.cell(row=2, column=col).fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
-                ws.cell(row=2, column=col).font = Font(bold=True, color='FFFFFF')
-                ws.merge_cells(start_row=2, start_column=col, end_row=2, end_column=col+2)
-                col += 3
-
-            # Row 3: Field headers
-            col = 1
-            ws.cell(row=3, column=col, value="Step Name")
-            ws.cell(row=3, column=col).font = Font(bold=True)
-            ws.cell(row=3, column=col).fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
-            col += 1
-
-            for _ in range(len(sorted_streams) + 1):  # +1 for total
-                for field_name in ['start_ns', 'end_ns', 'duration_ns']:
-                    cell = ws.cell(row=3, column=col, value=field_name)
-                    cell.font = Font(bold=True)
-                    cell.fill = PatternFill(start_color='E7E6E6', end_color='E7E6E6', fill_type='solid')
-                    col += 1
-
-            # Data rows
-            row = 4
-            for step in steps:
-                # Use simplified step name
-                step_name = simplify_step_name(step.text, step.step_type) if step.text else step.step_type.value
-                ws.cell(row=row, column=1, value=step_name)
-
-                col = 2
-                stream_times = step_stream_times.get(id(step), {})
-
-                # GPU Total
-                total_time = stream_times.get('total', (None, None, None))
-                if total_time[0] is not None:
-                    ws.cell(row=row, column=col, value=total_time[0])
-                    ws.cell(row=row, column=col+1, value=total_time[1])
-                    ws.cell(row=row, column=col+2, value=total_time[2])
-                col += 3
-
-                # Per-stream times
-                for stream_id in sorted_streams:
-                    stream_time = stream_times.get(stream_id, (None, None, None))
-                    if stream_time[0] is not None:
-                        ws.cell(row=row, column=col, value=stream_time[0])
-                        ws.cell(row=row, column=col+1, value=stream_time[1])
-                        ws.cell(row=row, column=col+2, value=stream_time[2])
-                    col += 3
-
-                row += 1
-
-            # Auto-adjust column widths
-            ws.column_dimensions['A'].width = 20
-            for c in range(2, num_cols + 1):
-                col_letter = self._get_col_letter(c)
-                ws.column_dimensions[col_letter].width = 15
-
-            wb.save(filename)
-            print(f"  Exported summary.xlsx for device {device_id} (PCIe={pcie_bus}) to {filename}")
-
-    def _get_col_letter(self, col_idx: int) -> str:
-        """Convert column index to Excel column letter (1=A, 2=B, 27=AA, etc.)"""
-        result = ""
-        while col_idx > 0:
-            col_idx, remainder = divmod(col_idx - 1, 26)
-            result = chr(65 + remainder) + result
-        return result
-
-    def _get_step_total_gpu_time(self, step_nvtx: NvtxEvent) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-        """Calculate total GPU execution time for a step"""
-        gpu_events = []
-
-        def collect_cuda(evt: BaseEvent):
-            if isinstance(evt, CudaEvent) and evt.gpu_start_ns is not None:
-                gpu_events.append(evt)
-            elif isinstance(evt, NvtxEvent):
-                for child in evt.children:
-                    collect_cuda(child)
-
-        for child in step_nvtx.children:
-            collect_cuda(child)
-
-        if gpu_events:
-            first_gpu = min(gpu_events, key=lambda e: e.gpu_start_ns)
-            last_gpu = max(gpu_events, key=lambda e: e.gpu_end_ns)
-            return (first_gpu.gpu_start_ns, last_gpu.gpu_end_ns,
-                    last_gpu.gpu_end_ns - first_gpu.gpu_start_ns)
-        return (None, None, None)
-
-    def _create_summary_sheet(self, ws, by_type: Dict, device_id: int, pcie_bus: str):
-        """Create summary sheet with overall GPU times"""
-        # Header
-        ws['A1'] = f"GPU Step Execution Summary - Device {device_id} (PCIe: {pcie_bus})"
-        ws['A1'].font = Font(bold=True, size=14)
-        ws.merge_cells('A1:F1')
-
-        # Column headers
-        headers = ['Step Name', 'Process Sig', 'GPU Start (ns)', 'GPU End (ns)', 'Duration (ms)', 'Streams Count']
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=3, column=col, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            cell.font = Font(bold=True, color='FFFFFF')
-
-        row = 4
-        for step_type in [StepType.FORWARD, StepType.BACKWARD, StepType.OPTIMIZER]:
-            if step_type not in by_type:
-                continue
-
-            steps = by_type[step_type]
-            steps.sort(key=lambda e: e.cpu_start_ns)
-
-            for step in steps:
-                # Calculate GPU execution time
-                gpu_events = []
-
-                def collect_cuda(evt: BaseEvent):
-                    if isinstance(evt, CudaEvent):
-                        gpu_events.append(evt)
-                    elif isinstance(evt, NvtxEvent):
-                        for child in evt.children:
-                            collect_cuda(child)
-
-                for child in step.children:
-                    collect_cuda(child)
-
-                gpu_events = [e for e in gpu_events if e.gpu_start_ns is not None]
-
-                if gpu_events:
-                    first_gpu = min(gpu_events, key=lambda e: e.gpu_start_ns)
-                    last_gpu = max(gpu_events, key=lambda e: e.gpu_end_ns)
-                    gpu_start = first_gpu.gpu_start_ns
-                    gpu_end = last_gpu.gpu_end_ns
-                    gpu_duration_ms = (gpu_end - gpu_start) / 1e6
-
-                    # Count unique streams
-                    streams = set(e.stream_id for e in gpu_events if e.stream_id)
-
-                    # Use the full NVTX text as step name
-                    step_name = step.text if step.text else step_type.value
-                    ws.cell(row=row, column=1, value=step_name)
-                    ws.cell(row=row, column=2, value=step.process_signature)
-                    ws.cell(row=row, column=3, value=gpu_start)
-                    ws.cell(row=row, column=4, value=gpu_end)
-                    ws.cell(row=row, column=5, value=round(gpu_duration_ms, 2))
-                    ws.cell(row=row, column=6, value=len(streams))
-                    row += 1
-
-        # Auto-adjust column widths
-        for col in range(1, 7):
-            ws.column_dimensions[chr(64 + col)].width = 18
-
-    def _create_step_stream_sheet(self, ws, steps: List[NvtxEvent], step_type: StepType, device_id: int):
-        """Create a sheet showing per-stream GPU execution times for steps"""
-        # Header
-        ws['A1'] = f"{step_type.value} - Per-Stream GPU Execution Times (Device {device_id})"
-        ws['A1'].font = Font(bold=True, size=12)
-        ws.merge_cells('A1:G1')
-
-        row = 3
-        for step_idx, step in enumerate(steps):
-            # Step header - use full NVTX text
-            step_display_name = step.text if step.text else f"Step {step_idx + 1}: {step_type.value}"
-            ws.cell(row=row, column=1, value=step_display_name)
-            ws.cell(row=row, column=1).font = Font(bold=True)
-            ws.merge_cells(f'A{row}:G{row}')
-            row += 1
-
-            # Collect stream GPU times for this step
-            stream_times = []
-
-            for stream_id, (gpu_start, gpu_end, gpu_duration) in step.stream_gpu_time.items():
-                if gpu_start is not None:
-                    stream_times.append({
-                        'stream_id': stream_id,
-                        'gpu_start_ns': gpu_start,
-                        'gpu_end_ns': gpu_end,
-                        'gpu_duration_ns': gpu_duration,
-                        'gpu_duration_ms': gpu_duration / 1e6
-                    })
-
-            if stream_times:
-                # Sort by GPU start time
-                stream_times.sort(key=lambda x: x['gpu_start_ns'])
-
-                # Column headers
-                headers = ['Stream ID', 'GPU Start (ns)', 'GPU End (ns)', 'Duration (ms)', '% of Total']
-                for col, header in enumerate(headers, 1):
-                    cell = ws.cell(row=row, column=col, value=header)
-                    cell.font = Font(bold=True)
-                    cell.fill = PatternFill(start_color='70AD47', end_color='70AD47', fill_type='solid')
-                    cell.font = Font(bold=True, color='FFFFFF')
-                row += 1
-
-                # Calculate total duration for percentage
-                total_duration = sum(st['gpu_duration_ns'] for st in stream_times)
-
-                for st in stream_times:
-                    percentage = (st['gpu_duration_ns'] / total_duration * 100) if total_duration > 0 else 0
-
-                    ws.cell(row=row, column=1, value=st['stream_id'])
-                    ws.cell(row=row, column=2, value=st['gpu_start_ns'])
-                    ws.cell(row=row, column=3, value=st['gpu_end_ns'])
-                    ws.cell(row=row, column=4, value=round(st['gpu_duration_ms'], 2))
-                    ws.cell(row=row, column=5, value=round(percentage, 2))
-                    row += 1
-
-                # Total row
-                total_ms = total_duration / 1e6
-                ws.cell(row=row, column=1, value="Total")
-                ws.cell(row=row, column=1).font = Font(bold=True)
-                ws.cell(row=row, column=4, value=round(total_ms, 2))
-                ws.cell(row=row, column=4).font = Font(bold=True)
-                ws.cell(row=row, column=5, value=100.0)
-                ws.cell(row=row, column=5).font = Font(bold=True)
-                row += 2
-            else:
-                ws.cell(row=row, column=1, value="No GPU events found")
-                row += 2
-
-        # Auto-adjust column widths
-        ws.column_dimensions['A'].width = 80  # Wider column for full step names
-        ws.column_dimensions['B'].width = 18
-        ws.column_dimensions['C'].width = 18
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 12
-
-    def print_summary(self):
-        print("\n" + "=" * 80)
-        print("ANALYSIS SUMMARY")
-        print("=" * 80)
-
-        summary = defaultdict(lambda: defaultdict(list))
-        for exec_info in self.step_executions:
-            summary[exec_info.iteration][exec_info.step_type.value].append(exec_info.gpu_duration_ns / 1e6)
-
-        print("\nStep GPU Execution Times:")
-        print("-" * 60)
-        for iteration in sorted(summary.keys()):
-            print(f"\n  Iteration {iteration}:")
-            for step_type in ['forward_step', 'backward_step', 'optimizer_step']:
-                if step_type in summary[iteration]:
-                    durations = summary[iteration][step_type]
-                    avg_duration = sum(durations) / len(durations)
-                    print(f"    {step_type}: {avg_duration:.2f} ms (avg across {len(durations)} processes)")
-
-        print("\nCopy Operations Summary:")
-        print("-" * 60)
-        offload_ops = [op for op in self.copy_operations if op.operation_type == "offload"]
-        reload_ops = [op for op in self.copy_operations if op.operation_type == "reload"]
-        blocking_ops = [op for op in self.copy_operations if op.is_blocking]
-
-        print(f"  Total offload operations: {len(offload_ops)}")
-        print(f"  Total reload operations: {len(reload_ops)}")
-        print(f"  Blocking operations: {len(blocking_ops)}")
-
-        by_module = defaultdict(lambda: {"offload": 0, "reload": 0, "total_bytes": 0})
-        for op in self.copy_operations:
-            by_module[op.module_name][op.operation_type] += 1
-            by_module[op.module_name]["total_bytes"] += op.total_bytes
-
-        print("\n  By module:")
-        for module, stats in by_module.items():
-            if module:
-                print(f"    {module}: offload={stats['offload']}, reload={stats['reload']}, "
-                      f"total_bytes={stats['total_bytes']/1e9:.2f} GB")
 
     def run(self):
         self.load_devices_from_sqlite()
         self.load_and_parse()
         self.build_event_tree()
-
-        # Build sig_to_device mapping after event tree is built
-        self._build_sig_to_device_mapping()
-
-        # 计算 stream GPU 时间并构建 stream 树
-        streams = self.calculate_stream_gpu_time()
-        self.build_stream_trees(streams)
-
+        self.compute_stream_timeline()
         self.analyze_steps()
-        self.analyze_offloading()
-        self.print_bugs()
-        self.print_summary()
-
-        iteration = self.iteration
-
-        # 只在启用 detail 模式时导出 stream trees (step 的详细 json)
-        if self.detail:
-            print("\n" + "=" * 80)
-            print(f"Exporting iteration {iteration} stream trees (all devices)")
-            print("=" * 80)
-            self.export_stream_trees(iteration, self.output_dir, streams)
-
-        print("\n" + "=" * 80)
-        print(f"Exporting iteration {iteration} summary.xlsx (all devices)")
-        print("=" * 80)
-        self.export_step_gpu_excel_v2(iteration, self.output_dir)
-
-        print("\n" + "=" * 80)
-        print(f"Exporting iteration {iteration} activation offload/reload analysis")
-        print("=" * 80)
-        self.export_offload_reload_excel(iteration, self.output_dir)
-
-        print("\n" + "=" * 80)
-        print(f"Exporting iteration {iteration} activation summary")
-        print("=" * 80)
-        self.export_summary_excel(iteration, self.output_dir)
-
-    def _get_step_time_range(self, iteration_num: int, step_type: StepType) -> Optional[Tuple[int, int]]:
-        """Get the time range for the first step of a given type in an iteration.
-
-        Returns:
-            Tuple of (start_ns, end_ns) or None if not found
-        """
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            return None
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        steps = []
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type == step_type:
-                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                    steps.append(nvtx)
-
-        if not steps:
-            return None
-
-        steps.sort(key=lambda e: e.cpu_start_ns)
-        first_step = steps[0]
-        return (first_step.cpu_start_ns, first_step.cpu_end_ns)
-
-    def _extract_activation_groups_for_step(self, iteration_num: int, step_type: StepType, operation_type: str) -> Tuple[List[ActivationOffloadGroup], Dict[str, int]]:
-        """Extract activation offload/reload groups for a specific step.
-
-        This method finds FineGrainedOffloading events that occur within the time range
-        of the specified step, then extracts activation data from them.
-
-        Args:
-            iteration_num: The iteration number
-            step_type: FORWARD or BACKWARD
-            operation_type: "offload" or "reload"
-
-        Returns:
-            Tuple of (groups, group_counts) where:
-                - groups: List of ActivationOffloadGroup objects (first occurrence only)
-                - group_counts: Dict mapping group name to total count
-        """
-        # Get iteration time range
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            return [], {}
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        # Get all steps of the given type within iteration
-        steps = []
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type == step_type:
-                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                    steps.append(nvtx)
-
-        if not steps:
-            return [], {}
-
-        steps.sort(key=lambda e: e.cpu_start_ns)
-        first_step = steps[0]
-        step_start = first_step.cpu_start_ns
-        step_end = first_step.cpu_end_ns
-
-        # Find FineGrainedOffloading events within this step's time range
-        target_events = []
-        for nvtx in self.nvtx_events:
-            text = nvtx.text
-            if "FineGrainedOffloading" not in text:
-                continue
-            # Check if event is within step time range (use CPU time)
-            if step_start <= nvtx.cpu_start_ns <= step_end:
-                # For offload: look for Commit events (includes GroupCommit)
-                # For reload: look for Start events (includes StartFunction and StartFunctionBackward)
-                if operation_type == "offload" and "Commit" in text:
-                    target_events.append(nvtx)
-                elif operation_type == "reload" and ("Start" in text or "Backward" in text) and "Commit" not in text:
-                    target_events.append(nvtx)
-
-        # First pass: count all group occurrences
-        group_counts = {}
-        for parent_nvtx in target_events:
-            for child in parent_nvtx.children:
-                if not isinstance(child, NvtxEvent):
-                    continue
-
-                child_text_lower = child.text.lower()
-                is_offloading = "activation offloading" in child_text_lower
-                is_reloading = "activation reloading" in child_text_lower
-
-                if (operation_type == "offload" and is_offloading) or \
-                   (operation_type == "reload" and is_reloading):
-                    parts = child.text.split()
-                    if len(parts) < 3:
-                        continue
-
-                    group_name = parts[-1]
-                    group_counts[group_name] = group_counts.get(group_name, 0) + 1
-
-        # Second pass: extract data (only first occurrence of each group)
-        groups = []
-        seen_groups = set()
-
-        for parent_nvtx in target_events:
-            for child in parent_nvtx.children:
-                if not isinstance(child, NvtxEvent):
-                    continue
-
-                child_text_lower = child.text.lower()
-                is_offloading = "activation offloading" in child_text_lower
-                is_reloading = "activation reloading" in child_text_lower
-
-                if (operation_type == "offload" and is_offloading) or \
-                   (operation_type == "reload" and is_reloading):
-                    parts = child.text.split()
-                    if len(parts) < 3:
-                        continue
-
-                    group_name = parts[-1]
-
-                    # Skip if we've already seen this group (keep only first occurrence)
-                    if group_name in seen_groups:
-                        continue
-                    seen_groups.add(group_name)
-
-                    # Extract copy operations under this activation event
-                    copies = []
-                    for copy_child in child.children:
-                        if not isinstance(copy_child, NvtxEvent):
-                            continue
-                        if "aten::copy_" not in copy_child.text.lower():
-                            continue
-
-                        sizes = copy_child.sizes
-                        if not sizes:
-                            continue
-
-                        for shape in sizes:
-                            if not shape:
-                                continue
-
-                            # Calculate shape size (number of elements)
-                            num_elements = 1
-                            for dim in shape:
-                                num_elements *= dim
-
-                            if num_elements == 0:
-                                continue
-
-                            # Find associated memcpy event first to get actual size
-                            memcpy_evt = None
-                            for grandchild in copy_child.children:
-                                if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
-                                    memcpy_evt = grandchild
-                                    break
-
-                            if not memcpy_evt or not memcpy_evt.gpu_start_ns:
-                                continue
-
-                            # Use actual bytes from CUDA memcpy event
-                            size_bytes = memcpy_evt.memcpy_size_bytes or (num_elements * 4)
-                            if not size_bytes:
-                                size_bytes = num_elements * 4  # fallback
-
-                            # Calculate byte/element
-                            byte_per_element = size_bytes // num_elements
-                            if byte_per_element < 1:
-                                byte_per_element = 4
-
-                            throughput_gibs = 0.0
-                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
-                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
-
-                            copy_info = ActivationCopyInfo(
-                                group=group_name,
-                                activation=f"tensor_{len(copies)}",
-                                shape=shape,
-                                size_bytes=size_bytes,
-                                byte_per_element=byte_per_element,
-                                throughput_gibs=throughput_gibs,
-                                gpu_start_ns=memcpy_evt.gpu_start_ns,
-                                gpu_end_ns=memcpy_evt.gpu_end_ns,
-                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
-                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
-                            )
-                            copies.append(copy_info)
-
-                    if copies:
-                        group = ActivationOffloadGroup(
-                            group=group_name,
-                            operation_type=operation_type,
-                            copies=copies
-                        )
-                        group.calculate_totals()
-                        groups.append(group)
-
-        return groups, group_counts
-        """Extract activation offload/reload groups for a specific step.
-
-        This method finds FineGrainedOffloading events that occur within the time range
-        of the specified step, then extracts activation data from them.
-
-        Args:
-            iteration_num: The iteration number
-            step_type: FORWARD or BACKWARD
-            operation_type: "offload" or "reload"
-
-        Returns:
-            List of ActivationOffloadGroup objects
-        """
-        # Get iteration time range
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            return []
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        # Get all steps of the given type within iteration
-        steps = []
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type == step_type:
-                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                    steps.append(nvtx)
-
-        if not steps:
-            return []
-
-        steps.sort(key=lambda e: e.cpu_start_ns)
-        first_step = steps[0]
-        step_start = first_step.cpu_start_ns
-        step_end = first_step.cpu_end_ns
-
-        # Find FineGrainedOffloading events within this step's time range
-        target_events = []
-        for nvtx in self.nvtx_events:
-            text = nvtx.text
-            if "FineGrainedOffloading" not in text:
-                continue
-            # Check if event is within step time range (use CPU time)
-            if step_start <= nvtx.cpu_start_ns <= step_end:
-                # For offload: look for Commit events (includes GroupCommit)
-                # For reload: look for Start events (includes StartFunction and StartFunctionBackward)
-                if operation_type == "offload" and "Commit" in text:
-                    target_events.append(nvtx)
-                elif operation_type == "reload" and ("Start" in text or "Backward" in text) and "Commit" not in text:
-                    target_events.append(nvtx)
-
-        # Extract activation groups from these events
-        groups = []
-        seen_groups = set()
-
-        for parent_nvtx in target_events:
-            # Look for activation events as children
-            for child in parent_nvtx.children:
-                if not isinstance(child, NvtxEvent):
-                    continue
-
-                child_text_lower = child.text.lower()
-                is_offloading = "activation offloading" in child_text_lower
-                is_reloading = "activation reloading" in child_text_lower
-
-                if (operation_type == "offload" and is_offloading) or \
-                   (operation_type == "reload" and is_reloading):
-                    # Extract group name
-                    parts = child.text.split()
-                    if len(parts) < 3:
-                        continue
-
-                    group_name = parts[-1]
-
-                    # Skip if we've already seen this group (keep only first occurrence)
-                    if group_name in seen_groups:
-                        continue
-                    seen_groups.add(group_name)
-
-                    # Extract copy operations under this activation event
-                    copies = []
-                    for copy_child in child.children:
-                        if not isinstance(copy_child, NvtxEvent):
-                            continue
-                        if "aten::copy_" not in copy_child.text.lower():
-                            continue
-
-                        sizes = copy_child.sizes
-                        if not sizes:
-                            continue
-
-                        for shape in sizes:
-                            if not shape:
-                                continue
-
-                            # Calculate size
-                            size_bytes = 4  # assume float32
-                            for dim in shape:
-                                size_bytes *= dim
-
-                            # Find associated memcpy event
-                            memcpy_evt = None
-                            for grandchild in copy_child.children:
-                                if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
-                                    memcpy_evt = grandchild
-                                    break
-
-                            if not memcpy_evt or not memcpy_evt.gpu_start_ns:
-                                continue
-
-                            throughput_gibs = 0.0
-                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
-                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
-
-                            copy_info = ActivationCopyInfo(
-                                group=group_name,
-                                activation=f"tensor_{len(copies)}",
-                                shape=shape,
-                                size_bytes=size_bytes,
-                                throughput_gibs=throughput_gibs,
-                                gpu_start_ns=memcpy_evt.gpu_start_ns,
-                                gpu_end_ns=memcpy_evt.gpu_end_ns,
-                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
-                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
-                            )
-                            copies.append(copy_info)
-
-                    if copies:
-                        group = ActivationOffloadGroup(
-                            group=group_name,
-                            operation_type=operation_type,
-                            copies=copies
-                        )
-                        group.calculate_totals()
-                        groups.append(group)
-
-        return groups
-
-    def _extract_activation_groups_from_step(self, step_nvtx: NvtxEvent, operation_type: str) -> List[ActivationOffloadGroup]:
-        """Extract activation offload/reload groups from a step NVTX event.
-
-        Args:
-            step_nvtx: The step NVTX event (forward_step or backward_step)
-            operation_type: "offload" or "reload"
-
-        Returns:
-            List of ActivationOffloadGroup objects
-        """
-        groups = []
-        seen_groups = set()  # Track seen group names to keep only first occurrence
-
-        def collect_offloading_events(evt: BaseEvent):
-            """Recursively collect FineGrainedOffloading events"""
-            if isinstance(evt, NvtxEvent):
-                # Check for FineGrainedOffloading events
-                if "FineGrainedOffloading" in evt.text:
-                    # This is an offload/reload operation
-                    # Look for "activation offloading {group}" child events
-                    for child in evt.children:
-                        if isinstance(child, NvtxEvent):
-                            child_text_lower = child.text.lower()
-                            if (operation_type == "offload" and "activation offloading" in child_text_lower) or \
-                               (operation_type == "reload" and "activation reloading" in child_text_lower):
-                                # Extract group name
-                                parts = child.text.split()
-                                if len(parts) >= 3:
-                                    group_name = parts[-1]
-
-                                    # Skip if we've already seen this group name
-                                    if group_name in seen_groups:
-                                        continue
-                                    seen_groups.add(group_name)
-
-                                    # Extract copy operations under this activation event
-                                    copies = []
-                                    for copy_child in child.children:
-                                        if isinstance(copy_child, NvtxEvent) and "aten::copy_" in copy_child.text.lower():
-                                            # Extract size info from copy NVTX
-                                            sizes = copy_child.sizes
-                                            if sizes:
-                                                for shape in sizes:
-                                                    if shape:
-                                                        size_bytes = 4  # assume float32
-                                                        for dim in shape:
-                                                            size_bytes *= dim
-
-                                                        # Find associated memcpy event
-                                                        memcpy_evt = None
-                                                        for grandchild in copy_child.children:
-                                                            if isinstance(grandchild, CudaEvent) and grandchild.is_memcpy:
-                                                                memcpy_evt = grandchild
-                                                                break
-
-                                                        if memcpy_evt and memcpy_evt.gpu_start_ns:
-                                                            throughput_gibs = 0.0
-                                                            if memcpy_evt.gpu_duration_ns and memcpy_evt.gpu_duration_ns > 0:
-                                                                throughput_gibs = (size_bytes / (1024**3)) / (memcpy_evt.gpu_duration_ns / 1e9)
-
-                                                            copy_info = ActivationCopyInfo(
-                                                                group=group_name,
-                                                                activation=f"tensor_{len(copies)}",
-                                                                shape=shape,
-                                                                size_bytes=size_bytes,
-                                                                throughput_gibs=throughput_gibs,
-                                                                gpu_start_ns=memcpy_evt.gpu_start_ns,
-                                                                gpu_end_ns=memcpy_evt.gpu_end_ns,
-                                                                gpu_duration_ns=memcpy_evt.gpu_duration_ns,
-                                                                memcpy_size_bytes=memcpy_evt.memcpy_size_bytes
-                                                            )
-                                                            copies.append(copy_info)
-
-                                    if copies:
-                                        group = ActivationOffloadGroup(
-                                            group=group_name,
-                                            operation_type=operation_type,
-                                            copies=copies
-                                        )
-                                        group.calculate_totals()
-                                        groups.append(group)
-
-                # Continue recursively
-                for child in evt.children:
-                    collect_offloading_events(child)
-
-        collect_offloading_events(step_nvtx)
-        return groups
-
-    def _get_first_step_by_type(self, iteration_num: int, step_type: StepType) -> Optional[NvtxEvent]:
-        """Get the first step of a given type in an iteration.
-
-        Returns:
-            The first NvtxEvent matching the step_type, or None if not found
-        """
-        # Find iteration events
-        iteration_events = [e for e in self.nvtx_events if e.iteration == iteration_num]
-        if not iteration_events:
-            return None
-
-        iteration_start = min(e.cpu_start_ns for e in iteration_events)
-        iteration_end = max(e.cpu_end_ns for e in iteration_events)
-
-        # Find steps of the given type
-        steps = []
-        for nvtx in self.nvtx_events:
-            if nvtx.step_type == step_type:
-                if iteration_start <= nvtx.cpu_start_ns <= iteration_end:
-                    steps.append(nvtx)
-
-        if not steps:
-            return None
-
-        # Sort by CPU start time and return the first
-        steps.sort(key=lambda e: e.cpu_start_ns)
-        return steps[0]
-
-    def export_offload_reload_excel(self, iteration_num: int, output_dir: str):
-        """Export offload and reload Excel tables for a specific iteration.
-
-        Creates one Excel file per device with 4 sheets:
-        - offload: detailed offload data from forward_step[0]
-        - reload: detailed reload data from backward_step[0]
-        - summary offload: aggregated offload data (TODO)
-        - summary reload: aggregated reload data (TODO)
-        """
-        if not OPENPYXL_AVAILABLE:
-            print("openpyxl not available, skipping offload/reload Excel export")
-            return
-
-        # Get offload groups from forward_step[0]
-        offload_groups, offload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
-        # Get reload groups from backward_step[0]
-        reload_groups, reload_counts = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
-
-        if not offload_groups and not reload_groups:
-            print(f"No offload/reload data found for iteration {iteration_num}")
-            return
-
-        # Organize by device - 支持多 device
-        device_groups: Dict[int, Dict[str, Any]] = {}
-        for group in offload_groups:
-            if group.copies and group.copies[0].gpu_start_ns:
-                # 从第一个 copy 的 GPU 时间推断 device
-                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
-                if device_id is None:
-                    device_id = 0
-                if device_id not in device_groups:
-                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
-                device_groups[device_id]['offload'].append(group)
-                # Update counts for this device
-                if group.group in device_groups[device_id]['offload_counts']:
-                    device_groups[device_id]['offload_counts'][group.group] += 1
-                else:
-                    device_groups[device_id]['offload_counts'][group.group] = 1
-        for group in reload_groups:
-            if group.copies and group.copies[0].gpu_start_ns:
-                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
-                if device_id is None:
-                    device_id = 0
-                if device_id not in device_groups:
-                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
-                device_groups[device_id]['reload'].append(group)
-                # Update counts for this device
-                if group.group in device_groups[device_id]['reload_counts']:
-                    device_groups[device_id]['reload_counts'][group.group] += 1
-                else:
-                    device_groups[device_id]['reload_counts'][group.group] = 1
-
-        # Create Excel file per device（只导出指定的 rank）
-        for device_id, groups_data in device_groups.items():
-            # 跳过未指定的 rank
-            if device_id not in self.rank:
-                continue
-            device_info = self.devices.get(device_id)
-            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
-            pcie_suffix = pcie_bus.replace(":", "_")
-
-            device_dir = os.path.join(output_dir, pcie_suffix)
-            os.makedirs(device_dir, exist_ok=True)
-
-            filename = os.path.join(device_dir, f"activation_offload_analysis_{pcie_suffix}.xlsx")
-            wb = Workbook()
-
-            # Create offload sheet (detailed data)
-            if groups_data['offload']:
-                self._create_detail_sheet_with_merge(wb, "offload", groups_data['offload'], iteration_num, pcie_bus)
-            else:
-                ws = wb.active
-                ws.title = "offload"
-                ws['A1'] = "No offload data found"
-
-            # Create reload sheet (detailed data)
-            if groups_data['reload']:
-                self._create_detail_sheet_with_merge(wb, "reload", groups_data['reload'], iteration_num, pcie_bus)
-            else:
-                ws = wb.create_sheet(title="reload")
-                ws['A1'] = "No reload data found"
-
-            # Create summary offload sheet (TODO)
-            ws_summary_offload = wb.create_sheet(title="summary offload")
-            ws_summary_offload['A1'] = "TODO: summary offload"
-
-            # Create summary reload sheet (TODO)
-            ws_summary_reload = wb.create_sheet(title="summary reload")
-            ws_summary_reload['A1'] = "TODO: summary reload"
-
-            # Remove default sheet if it exists
-            if 'Sheet' in wb.sheetnames:
-                wb.remove(wb['Sheet'])
-
-            wb.save(filename)
-            print(f"  Exported activation_offload_analysis_{pcie_suffix}.xlsx for device {device_id} (PCIe={pcie_bus}) to {filename}")
-
-    def _create_detail_sheet(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], operation_type: str):
-        """Create a detail sheet for offload or reload.
-
-        Each tensor occupies one row.
-        Columns: group, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s)
-        """
-        ws = wb.create_sheet(title=sheet_name)
-
-        # Headers
-        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
-                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            cell.font = Font(bold=True, color='FFFFFF')
-
-        row = 2
-        for group in groups:
-            is_first_row_of_group = True
-            for copy_info in group.copies:
-                # group column: only for first row of group
-                if is_first_row_of_group:
-                    ws.cell(row=row, column=1, value=group.group)
-                    is_first_row_of_group = False
-                else:
-                    ws.cell(row=row, column=1, value=None)  # Empty for subsequent rows
-
-                # shape
-                ws.cell(row=row, column=2, value=str(copy_info.shape))
-
-                # byte/element - use pre-calculated value from ActivationCopyInfo
-                ws.cell(row=row, column=3, value=copy_info.byte_per_element)
-
-                # size
-                ws.cell(row=row, column=4, value=copy_info.size_bytes)
-
-                # time(ms)
-                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
-                ws.cell(row=row, column=5, value=round(time_ms, 3))
-
-                # throughput(GiB/s)
-                ws.cell(row=row, column=6, value=round(copy_info.throughput_gibs, 4))
-
-                row += 1
-
-            # Add total row for this group (only once after all copies)
-            if group.copies:
-                ws.cell(row=row, column=7, value=group.total_size_bytes)
-                total_time_ms = sum((c.gpu_duration_ns or 0) for c in group.copies) / 1e6
-                ws.cell(row=row, column=8, value=round(total_time_ms, 3))
-                ws.cell(row=row, column=9, value=round(group.total_throughput_gibs, 4))
-                row += 1
-
-        # Auto-adjust column widths
-        ws.column_dimensions['A'].width = 15
-        ws.column_dimensions['B'].width = 25
-        ws.column_dimensions['C'].width = 15
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 12
-        ws.column_dimensions['F'].width = 18
-        ws.column_dimensions['G'].width = 15
-        ws.column_dimensions['H'].width = 15
-        ws.column_dimensions['I'].width = 22
-
-    def _create_detail_sheet_with_merge(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], iteration_num: int, pcie_bus: str):
-        """Create a detail sheet with merged group cells.
-
-        Format:
-        - Row 1: Title with device info
-        - Row 2: Headers (group, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s))
-        - Data rows: group name merged across all its copy rows
-        - Total row per group showing aggregated data
-        """
-        if sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
-        else:
-            ws = wb.create_sheet(title=sheet_name)
-
-        # Row 1: Title - write to A1 only, don't merge
-        title = f"Activation {sheet_name.upper()} - Iteration {iteration_num} (GPU: {pcie_bus})"
-        title_cell = ws.cell(row=1, column=1, value=title)
-        title_cell.font = Font(bold=True, size=12)
-
-        # Row 2: Headers
-        headers = ['group', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
-                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=2, column=col, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            cell.font = Font(bold=True, color='FFFFFF')
-
-        row = 3
-        merge_ranges = []  # Store merge ranges to apply after all data is written
-
-        for group in groups:
-            if not group.copies:
-                continue
-
-            group_start_row = row
-            group_total_duration_ns = 0
-
-            # Write each copy as a row
-            for copy_info in group.copies:
-                # shape
-                ws.cell(row=row, column=2, value=str(copy_info.shape))
-                # byte/element
-                ws.cell(row=row, column=3, value=copy_info.byte_per_element)
-                # size
-                ws.cell(row=row, column=4, value=copy_info.size_bytes)
-                # time(ms) - 3 decimal places
-                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
-                ws.cell(row=row, column=5, value=round(time_ms, 3))
-                # throughput(GiB/s) - 4 decimal places
-                ws.cell(row=row, column=6, value=round(copy_info.throughput_gibs, 4))
-
-                group_total_duration_ns += (copy_info.gpu_duration_ns or 0)
-                row += 1
-
-            group_end_row = row - 1
-
-            # Write group name to first row of the group
-            group_cell = ws.cell(row=group_start_row, column=1, value=group.group)
-            group_cell.alignment = Alignment(vertical='center')
-
-            # Record merge range if more than one row
-            if group_start_row < group_end_row:
-                merge_ranges.append((group_start_row, group_end_row))
-
-            # Total row for this group
-            ws.cell(row=row, column=7, value=group.total_size_bytes)
-            total_time_ms = group_total_duration_ns / 1e6
-            ws.cell(row=row, column=8, value=round(total_time_ms, 3))
-            ws.cell(row=row, column=9, value=round(group.total_throughput_gibs, 4))
-
-            row += 1
-
-        # Apply all merges after all data is written
-        for start_row, end_row in merge_ranges:
-            ws.merge_cells(start_row=start_row, start_column=1,
-                           end_row=end_row, end_column=1)
-
-        # Auto-adjust column widths
-        ws.column_dimensions['A'].width = 15
-        ws.column_dimensions['B'].width = 25
-        ws.column_dimensions['C'].width = 15
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 12
-        ws.column_dimensions['F'].width = 18
-        ws.column_dimensions['G'].width = 15
-        ws.column_dimensions['H'].width = 15
-        ws.column_dimensions['I'].width = 22
-
-    def export_summary_excel(self, iteration_num: int, output_dir: str):
-        """Export summary Excel with aggregated data and count column.
-
-        Summary offload: forward_step[0] offload data, aggregated by group name
-        Summary reload: backward_step[0] reload data, aggregated by group name
-        Each group has a count column showing how many groups of that name exist.
-        """
-        if not OPENPYXL_AVAILABLE:
-            print("openpyxl not available, skipping summary Excel export")
-            return
-
-        # Get offload groups from forward_step[0]
-        offload_groups, _ = self._extract_activation_groups_for_step(iteration_num, StepType.FORWARD, "offload")
-        # Get reload groups from backward_step[0]
-        reload_groups, _ = self._extract_activation_groups_for_step(iteration_num, StepType.BACKWARD, "reload")
-
-        if not offload_groups and not reload_groups:
-            print(f"No offload/reload data found for iteration {iteration_num}")
-            return
-
-        # Organize by device - 支持多 device
-        device_groups: Dict[int, Dict[str, Any]] = {}
-        for group in offload_groups:
-            if group.copies and group.copies[0].gpu_start_ns:
-                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
-                if device_id is None:
-                    device_id = 0
-                if device_id not in device_groups:
-                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
-                device_groups[device_id]['offload'].append(group)
-                if group.group in device_groups[device_id]['offload_counts']:
-                    device_groups[device_id]['offload_counts'][group.group] += 1
-                else:
-                    device_groups[device_id]['offload_counts'][group.group] = 1
-        for group in reload_groups:
-            if group.copies and group.copies[0].gpu_start_ns:
-                device_id = self._get_device_from_gpu_time(group.copies[0].gpu_start_ns)
-                if device_id is None:
-                    device_id = 0
-                if device_id not in device_groups:
-                    device_groups[device_id] = {'offload': [], 'reload': [], 'offload_counts': {}, 'reload_counts': {}}
-                device_groups[device_id]['reload'].append(group)
-                if group.group in device_groups[device_id]['reload_counts']:
-                    device_groups[device_id]['reload_counts'][group.group] += 1
-                else:
-                    device_groups[device_id]['reload_counts'][group.group] = 1
-
-        # Create Excel file per device（只导出指定的 rank）
-        for device_id, groups_data in device_groups.items():
-            # 跳过未指定的 rank
-            if device_id not in self.rank:
-                continue
-            device_info = self.devices.get(device_id)
-            pcie_bus = device_info.pcie_bus if device_info else f"device_{device_id}"
-            pcie_suffix = pcie_bus.replace(":", "_")
-
-            device_dir = os.path.join(output_dir, pcie_suffix)
-            os.makedirs(device_dir, exist_ok=True)
-
-            filename = os.path.join(device_dir, "activation_summary.xlsx")
-            wb = Workbook()
-            has_sheets = False
-
-            # Process offload summary - 使用 device 自己的 counts
-            if groups_data['offload']:
-                self._create_summary_sheet(wb, "summary-offload", groups_data['offload'], groups_data['offload_counts'], "offload")
-                has_sheets = True
-
-            # Process reload summary - 使用 device 自己的 counts
-            if groups_data['reload']:
-                self._create_summary_sheet(wb, "summary-reload", groups_data['reload'], groups_data['reload_counts'], "reload")
-                has_sheets = True
-
-            # Remove default sheet if it exists and we have other sheets
-            if 'Sheet' in wb.sheetnames:
-                if has_sheets:
-                    wb.remove(wb['Sheet'])
-                else:
-                    ws = wb['Sheet']
-                    ws.title = "No Data"
-                    ws['A1'] = "No activation summary data found"
-
-            wb.save(filename)
-            print(f"  Exported activation_summary.xlsx for device {device_id} (PCIe={pcie_bus}) to {filename}")
-
-    def _create_summary_sheet(self, wb: Workbook, sheet_name: str, groups: List[ActivationOffloadGroup], group_counts: Dict[str, int], operation_type: str):
-        """Create a summary sheet with aggregated data.
-
-        Aggregates data by group name, adds count column as second column.
-        Columns: group, count, shape, byte/element, size, time(ms), throughput(GiB/s), total_size, total_time(ms), total_throughput(GiB/s)
-        """
-        ws = wb.create_sheet(title=sheet_name)
-
-        # Aggregate by group name
-        group_stats = defaultdict(lambda: {
-            'count': 0,
-            'copies': [],
-            'total_size': 0,
-            'total_duration_ns': 0
-        })
-
-        for group in groups:
-            stats = group_stats[group.group]
-            # Use the passed group_counts dict for actual count
-            stats['count'] = group_counts.get(group.group, 1)
-            stats['copies'].extend(group.copies)
-            stats['total_size'] += group.total_size_bytes
-            stats['total_duration_ns'] += sum((c.gpu_duration_ns or 0) for c in group.copies)
-
-        # Headers - count is now second column
-        headers = ['group', 'count', 'shape', 'byte/element', 'size', 'time(ms)', 'throughput(GiB/s)',
-                   'total_size', 'total_time(ms)', 'total_throughput(GiB/s)']
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            cell.font = Font(bold=True, color='FFFFFF')
-
-        row = 2
-        for group_name, stats in group_stats.items():
-            copies = stats['copies']
-            if not copies:
-                continue
-
-            # Calculate total throughput for aggregated data
-            total_throughput_gibs = 0.0
-            if stats['total_duration_ns'] > 0:
-                total_throughput_gibs = (stats['total_size'] / (1024**3)) / (stats['total_duration_ns'] / 1e9)
-
-            is_first_row_of_group = True
-            for copy_info in copies:
-                # group column - only on first row
-                if is_first_row_of_group:
-                    ws.cell(row=row, column=1, value=group_name)
-                    # count column - second column, as requested
-                    ws.cell(row=row, column=2, value=stats['count'])
-                    is_first_row_of_group = False
-                else:
-                    ws.cell(row=row, column=1, value=None)
-                    ws.cell(row=row, column=2, value=None)
-
-                # shape
-                ws.cell(row=row, column=3, value=str(copy_info.shape))
-
-                # byte/element - use pre-calculated value from ActivationCopyInfo
-                ws.cell(row=row, column=4, value=copy_info.byte_per_element)
-
-                # size
-                ws.cell(row=row, column=5, value=copy_info.size_bytes)
-
-                # time(ms)
-                time_ms = (copy_info.gpu_duration_ns or 0) / 1e6
-                ws.cell(row=row, column=6, value=round(time_ms, 3))
-
-                # throughput(GiB/s)
-                ws.cell(row=row, column=7, value=round(copy_info.throughput_gibs, 4))
-
-                row += 1
-
-            # Add aggregated total row for this group (after all copies)
-            ws.cell(row=row, column=8, value=stats['total_size'])
-            total_time_ms = stats['total_duration_ns'] / 1e6
-            ws.cell(row=row, column=9, value=round(total_time_ms, 3))
-            ws.cell(row=row, column=10, value=round(total_throughput_gibs, 4))
-            row += 1
-
-        # Auto-adjust column widths
-        ws.column_dimensions['A'].width = 15
-        ws.column_dimensions['B'].width = 8
-        ws.column_dimensions['C'].width = 25
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 15
-        ws.column_dimensions['F'].width = 12
-        ws.column_dimensions['G'].width = 18
-        ws.column_dimensions['H'].width = 15
-        ws.column_dimensions['I'].width = 15
-        ws.column_dimensions['J'].width = 22
+        self.analyze_fine_grained_offloading()
 
 def main():
     parser = argparse.ArgumentParser(
@@ -2737,7 +624,7 @@ Examples:
     print(f"Detail mode: {'enabled' if args.detail else 'disabled'}")
     print(f"=" * 80)
 
-    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.iteration, args.rank, args.detail)
+    analyzer = NSYSAnalyzer(args.json, args.sqlite, args.output, args.rank, args.iteration, args.detail)
     analyzer.run()
 
     print("\n" + "=" * 80)
