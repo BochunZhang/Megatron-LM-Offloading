@@ -168,11 +168,11 @@ class KernelEvent(Base):
 @dataclass
 class MemcpyEvent(Base):
     """Type:80"""
-    sizebytes: int
-    copyKind: int 
-    srcKind: int
-    dstKind: int
-    copyCount: int
+    sizebytes: int = 0
+    copyKind: int = 0
+    srcKind: int = 0
+    dstKind: int = 0
+    copyCount: int = 0
 
 @dataclass
 class SyncSrcEvent(Base):
@@ -913,26 +913,26 @@ class NSYSAnalyzer:
 
         wb = Workbook()
 
-        # 创建 summary sheet（放在第一个）
-        ws_summary = wb.active
-        ws_summary.title = "summary"
-        self._fill_summary_sheet(ws_summary, offload_summary, reload_summary)
-
-        # 创建 offloading sheet
-        ws_offload = wb.create_sheet(title="offloading")
+        # 创建 offloading sheet（第一个）
+        ws_offload = wb.active
+        ws_offload.title = "offloading"
         self._fill_fine_grained_detail_sheet(ws_offload, offload_all_data, "Fine-Grained Offloading")
 
-        # 创建 reloading sheet
+        # 创建 reloading sheet（第二个）
         ws_reload = wb.create_sheet(title="reloading")
         self._fill_fine_grained_detail_sheet(ws_reload, reload_all_data, "Fine-Grained Reloading")
+
+        # 创建 summary sheet（放在最后）
+        ws_summary = wb.create_sheet(title="summary")
+        self._fill_summary_sheet(ws_summary, offload_summary, reload_summary)
 
         wb.save(output_path)
         print(f"\nFine-grained offload analysis saved to: {output_path}")
 
     def _fill_summary_sheet(self, ws, offload_summary: Dict, reload_summary: Dict):
         """填充 summary sheet - 同名 group 汇总统计"""
-        # Header row
-        headers = ['type', 'group', 'count', 'total_size', 'total_time(ms)', 'avg_throughput(GiB/s)']
+        # Header row - 使用带单位的列名
+        headers = ['type', 'group', 'count', 'size(bytes)', 'time(ms)', 'throughput(GiB/s)']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = Font(bold=True)
@@ -943,6 +943,8 @@ class NSYSAnalyzer:
 
         # 写入 offload 汇总数据
         offload_start_row = row
+        offload_total_size = 0
+        offload_total_time = 0
         for group_name, stats in offload_summary.items():
             ws.cell(row=row, column=1, value='offload')
             ws.cell(row=row, column=2, value=group_name)
@@ -950,17 +952,37 @@ class NSYSAnalyzer:
             ws.cell(row=row, column=4, value=stats['total_size'])
             ws.cell(row=row, column=5, value=round(stats['total_time_ms'], 3))
             ws.cell(row=row, column=6, value=round(stats['avg_throughput'], 4))
+            offload_total_size += stats['total_size']
+            offload_total_time += stats['total_time_ms']
             row += 1
 
-        # 合并 offload 的 type 列
-        if offload_summary and len(offload_summary) > 1:
-            ws.merge_cells(start_row=offload_start_row, start_column=1,
-                          end_row=offload_start_row + len(offload_summary) - 1, end_column=1)
+        # 添加 offload 总计行
         if offload_summary:
+            offload_avg_throughput = (offload_total_size / (1024**3)) / (offload_total_time / 1e3) if offload_total_time > 0 else 0
+            ws.cell(row=row, column=1, value='offload')
+            ws.cell(row=row, column=2, value='TOTAL')
+            ws.cell(row=row, column=3, value='-')
+            ws.cell(row=row, column=4, value=offload_total_size)
+            ws.cell(row=row, column=5, value=round(offload_total_time, 3))
+            ws.cell(row=row, column=6, value=round(offload_avg_throughput, 4))
+            # 高亮总计行
+            for col in range(1, 7):
+                ws.cell(row=row, column=col).font = Font(bold=True)
+                ws.cell(row=row, column=col).fill = PatternFill(start_color='E7E6E6', end_color='E7E6E6', fill_type='solid')
+            row += 1
+
+        # 合并 offload 的 type 列（包括 TOTAL 行）
+        if offload_summary:
+            end_row = row - 1  # row 已经包含了 TOTAL 行后的下一个位置
+            if end_row > offload_start_row:
+                ws.merge_cells(start_row=offload_start_row, start_column=1,
+                              end_row=end_row, end_column=1)
             ws.cell(row=offload_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
 
         # 写入 reload 汇总数据
         reload_start_row = row
+        reload_total_size = 0
+        reload_total_time = 0
         for group_name, stats in reload_summary.items():
             ws.cell(row=row, column=1, value='reload')
             ws.cell(row=row, column=2, value=group_name)
@@ -968,21 +990,39 @@ class NSYSAnalyzer:
             ws.cell(row=row, column=4, value=stats['total_size'])
             ws.cell(row=row, column=5, value=round(stats['total_time_ms'], 3))
             ws.cell(row=row, column=6, value=round(stats['avg_throughput'], 4))
+            reload_total_size += stats['total_size']
+            reload_total_time += stats['total_time_ms']
             row += 1
 
-        # 合并 reload 的 type 列
-        if reload_summary and len(reload_summary) > 1:
-            ws.merge_cells(start_row=reload_start_row, start_column=1,
-                          end_row=reload_start_row + len(reload_summary) - 1, end_column=1)
+        # 添加 reload 总计行
         if reload_summary:
+            reload_avg_throughput = (reload_total_size / (1024**3)) / (reload_total_time / 1e3) if reload_total_time > 0 else 0
+            ws.cell(row=row, column=1, value='reload')
+            ws.cell(row=row, column=2, value='TOTAL')
+            ws.cell(row=row, column=3, value='-')
+            ws.cell(row=row, column=4, value=reload_total_size)
+            ws.cell(row=row, column=5, value=round(reload_total_time, 3))
+            ws.cell(row=row, column=6, value=round(reload_avg_throughput, 4))
+            # 高亮总计行
+            for col in range(1, 7):
+                ws.cell(row=row, column=col).font = Font(bold=True)
+                ws.cell(row=row, column=col).fill = PatternFill(start_color='E7E6E6', end_color='E7E6E6', fill_type='solid')
+            row += 1
+
+        # 合并 reload 的 type 列（包括 TOTAL 行）
+        if reload_summary:
+            end_row = row - 1  # row 已经包含了 TOTAL 行后的下一个位置
+            if end_row > reload_start_row:
+                ws.merge_cells(start_row=reload_start_row, start_column=1,
+                              end_row=end_row, end_column=1)
             ws.cell(row=reload_start_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
 
         # 调整列宽
         ws.column_dimensions['A'].width = 15
         ws.column_dimensions['B'].width = 20
         ws.column_dimensions['C'].width = 10
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 18
+        ws.column_dimensions['D'].width = 18
+        ws.column_dimensions['E'].width = 15
         ws.column_dimensions['F'].width = 22
 
     def _fill_fine_grained_detail_sheet(self, ws, all_data: Dict[str, List[NvtxNode]], title: str):
