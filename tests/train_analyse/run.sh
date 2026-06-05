@@ -3,11 +3,12 @@
 # Scans for .nsys-rep files, exports to JSON/SQLite, and runs Python analysis
 #
 # Usage:
-#   ./run.sh [--iteration N] [--output-dir DIR] [NSYS_REP_PATH]
+#   ./run.sh [--iteration N] [--detail] [PATH]
 #
 # Examples:
-#   ./run.sh                                    # Scan current directory
-#   ./run.sh logs/nsys-profile/                 # Scan specific directory
+#   ./run.sh                                    # Scan current directory recursively
+#   ./run.sh /path/to/logs/                     # Scan specific directory recursively
+#   ./run.sh --detail /path/to/logs/            # Enable detail mode (output JSON)
 #   ./run.sh --iteration 20 /path/to/file.nsys-rep  # Analyze specific file
 
 set -e
@@ -17,9 +18,9 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Default values
 ITERATION=16
-OUTPUT_DIR="${PROJECT_ROOT}/documents/train_analyse"
 SCAN_DIR="."
 SPECIFIC_FILE=""
+DETAIL_MODE=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -28,16 +29,16 @@ while [[ $# -gt 0 ]]; do
             ITERATION="$2"
             shift 2
             ;;
-        --output-dir|-o)
-            OUTPUT_DIR="$2"
-            shift 2
+        --detail|-d)
+            DETAIL_MODE="--detail"
+            shift
             ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS] [PATH]"
             echo ""
             echo "Options:"
             echo "  --iteration N    Iteration number to analyze (default: 16)"
-            echo "  --output-dir DIR Output directory (default: documents/train_analyse)"
+            echo "  --detail         Enable detail mode to export JSON files"
             echo "  --help          Show this help message"
             echo ""
             echo "Arguments:"
@@ -58,14 +59,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Create output directory
-mkdir -p "${OUTPUT_DIR}"
-
 echo "=========================================="
 echo "NSYS Profile Analysis Pipeline"
 echo "=========================================="
 echo "Iteration: ${ITERATION}"
-echo "Output: ${OUTPUT_DIR}"
+echo "Detail mode: ${DETAIL_MODE:-disabled}"
 echo ""
 
 # Check nsys CLI availability
@@ -77,12 +75,18 @@ fi
 # Function to process a single .nsys-rep file
 process_nsys_rep() {
     local nsys_file="$1"
+    local file_dir=$(dirname "${nsys_file}")
     local base_name=$(basename "${nsys_file}" .nsys-rep)
-    local json_file="${OUTPUT_DIR}/${base_name}.json"
-    local sqlite_file="${OUTPUT_DIR}/${base_name}.sqlite"
+    local analyse_dir="${file_dir}/analyse"
+    local json_file="${analyse_dir}/${base_name}.json"
+    local sqlite_file="${analyse_dir}/${base_name}.sqlite"
 
     echo "Processing: ${nsys_file}"
     echo "  Base name: ${base_name}"
+    echo "  Analyse dir: ${analyse_dir}"
+
+    # Create analyse directory
+    mkdir -p "${analyse_dir}"
 
     # Export to JSON if not exists or older than source
     if [[ ! -f "${json_file}" ]] || [[ "${nsys_file}" -nt "${json_file}" ]]; then
@@ -104,13 +108,7 @@ process_nsys_rep() {
     if [[ ! -f "${sqlite_file}" ]] || [[ "${nsys_file}" -nt "${sqlite_file}" ]]; then
         echo "  Creating SQLite copy..."
         if command -v nsys &> /dev/null; then
-            # Export to sqlite
-            cp "${nsys_file}" "${sqlite_file}.tmp" 2>/dev/null || true
-            # Actually we need to export to sqlite format
-            # Try nsys export sqlite
             nsys export -t sqlite "${nsys_file}" -o "${sqlite_file}" 2>/dev/null || {
-                # Fallback: create a symbolic link with .sqlite extension
-                # and let Python use the original .nsys-rep file
                 echo "  Using original .nsys-rep as SQLite source"
                 ln -sf "$(realpath "${nsys_file}")" "${sqlite_file}" 2>/dev/null || \
                     cp "${nsys_file}" "${sqlite_file}" 2>/dev/null || true
@@ -123,17 +121,19 @@ process_nsys_rep() {
     # Run Python analyzer
     if [[ -f "${json_file}" ]]; then
         echo "  Running Python analyzer..."
-        python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
+        PYENV_VERSION=megatron-py3.13.9 pyenv exec python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
             --sqlite "${sqlite_file}" \
             --json "${json_file}" \
-            --output "${OUTPUT_DIR}/${base_name}_analysis" \
-            --iteration "${ITERATION}" || {
+            --output "${analyse_dir}" \
+            --iteration "${ITERATION}" \
+            ${DETAIL_MODE} || {
             echo "  Warning: Python analysis failed"
             return 1
         }
     fi
 
     echo "  Done: ${base_name}"
+    echo "  Results saved to: ${analyse_dir}"
     echo ""
 }
 
@@ -142,22 +142,20 @@ if [[ -n "${SPECIFIC_FILE}" ]]; then
     # Process specific file
     process_nsys_rep "${SPECIFIC_FILE}"
 else
-    # Scan directory for .nsys-rep files
-    echo "Scanning: ${SCAN_DIR}"
+    # Scan directory recursively for .nsys-rep files
+    echo "Scanning recursively: ${SCAN_DIR}"
     echo ""
 
     found=0
     while IFS= read -r -d '' file; do
         process_nsys_rep "${file}"
         found=1
-    done < <(find "${SCAN_DIR}" -maxdepth 2 -name "*.nsys-rep" -type f -print0 2>/dev/null)
+    done < <(find "${SCAN_DIR}" -name "*.nsys-rep" -type f -print0 2>/dev/null)
 
     if [[ $found -eq 0 ]]; then
         echo "No .nsys-rep files found in ${SCAN_DIR}"
         echo ""
-        echo "Searched paths:"
-        echo "  - ${SCAN_DIR}"
-        echo "  - ${SCAN_DIR}/*/"
+        echo "Searched recursively in: ${SCAN_DIR}"
         echo ""
         echo "You can specify a file directly:"
         echo "  $0 /path/to/profile.nsys-rep"
@@ -167,5 +165,5 @@ fi
 
 echo "=========================================="
 echo "Analysis complete!"
-echo "Results in: ${OUTPUT_DIR}"
+echo "Results saved in analyse/ subdirectories"
 echo "=========================================="

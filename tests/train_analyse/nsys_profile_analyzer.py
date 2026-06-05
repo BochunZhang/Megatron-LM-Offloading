@@ -1264,8 +1264,9 @@ class NSYSAnalyzer:
         streams = self.calculate_stream_gpu_time()
         self.build_stream_trees(streams)
 
-        # 导出 stream trees
-        self.export_stream_trees(streams)
+        # 只有在 detail 模式下才导出 stream trees JSON
+        if self.detail:
+            self.export_stream_trees(streams)
 
         self.analyze_steps()
         self.analyze_fine_grained_offloading()
