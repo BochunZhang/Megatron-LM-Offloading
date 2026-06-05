@@ -1332,7 +1332,7 @@ Examples:
                         help='Output directory for analysis results')
     parser.add_argument('--iteration', '-i', type=int, default=16,
                         help='Iteration number to analyze (default: 16)')
-    parser.add_argument('--rank', '-r', type=int, nargs='+', default=[0, 1, 2, 3],
+    parser.add_argument('--rank', '-r', type=int, nargs='+', default=[0],
                         help='Device ranks to export (default: 0 1 2 3, export all devices)')
     parser.add_argument('--detail', action='store_true',
                         help='Export detailed step JSON files (default: False, only export xlsx)')
