@@ -154,7 +154,7 @@ process_nsys_rep() {
     # Run Python analyzer
     if [[ -f "${json_file}" ]]; then
         echo "  Running Python analyzer..."
-        PYENV_VERSION=megatron-py3.13.9 pyenv exec python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
+        python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
             --sqlite "${sqlite_file}" \
             --json "${json_file}" \
             --output "${output_dir}" \
