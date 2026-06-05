@@ -103,22 +103,15 @@ process_train_log() {
 
     echo "  Found train.log, extracting throughput data..."
 
-    # Output path for throughput Excel (same directory as nsys-rep output)
-    local throughput_xlsx="${output_dir}/throughput_summary.xlsx"
+    # Output path for throughput Excel
+    local throughput_xlsx="${output_dir}/throughput.xlsx"
 
-    # Run Python script to extract throughput
+    # Run Python script: extract_throughput.py <train_log> <output_xlsx>
     python3 "${SCRIPT_DIR}/extract_throughput.py" \
-        "${throughput_xlsx}" \
-        "${train_log}"
+        "${train_log}" \
+        "${throughput_xlsx}"
 
-    local python_exit_code=$?
-    if [[ $python_exit_code -ne 0 ]]; then
-        echo "  Warning: Throughput extraction failed with exit code $python_exit_code"
-    elif [[ -f "${throughput_xlsx}" ]]; then
-        echo "  ✓ Throughput data extracted to: ${throughput_xlsx}"
-    fi
-
-    return 0
+    return $?
 }
 
 # Function to process a single .nsys-rep file
@@ -220,7 +213,7 @@ process_nsys_rep() {
         local xlsx_count=$(find "${output_dir}" -name "*.xlsx" 2>/dev/null | wc -l)
         if [[ $xlsx_count -gt 0 ]]; then
             echo "  ✓ Generated $xlsx_count Excel file(s) in: ${output_dir}"
-            # Process train.log for throughput extraction
+            # Process train.log for throughput extraction (if exists)
             process_train_log "${nsys_file}" "${output_dir}"
         else
             echo "  Warning: No Excel files found in output directory"
