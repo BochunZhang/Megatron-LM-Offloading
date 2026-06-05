@@ -131,11 +131,17 @@ process_nsys_rep() {
     local dir_name="$(basename "$abs_file_dir")"
     local output_dir="${parent_dir}-result/${dir_name}"
 
+    # Create Excel output directory early (for train.log processing)
+    mkdir -p "${output_dir}"
+
     echo "=========================================="
     echo "Processing: ${nsys_file}"
     echo "  JSON/SQLite dir: ${file_dir}"
     echo "  Excel output dir: ${output_dir}"
     echo "=========================================="
+
+    # Track if nsys processing succeeded
+    local nsys_success=false
 
     # Check if JSON and SQLite already exist
     local need_export=false
@@ -154,27 +160,30 @@ process_nsys_rep() {
     if [[ "$need_export" == true ]]; then
         if command -v nsys &> /dev/null; then
             echo "  Exporting to JSON..."
-            nsys export -t json "${nsys_file}" -o "${json_file}" || {
+            if ! nsys export -t json "${nsys_file}" -o "${json_file}"; then
                 echo "  Error: JSON export failed"
                 FAILED_ITEMS+=("${nsys_file}: JSON export failed")
+                # Still process train.log before returning
+                process_train_log "${nsys_file}" "${output_dir}"
+                echo ""
                 return 1
-            }
+            fi
 
             echo "  Exporting to SQLite..."
-            nsys export -t sqlite "${nsys_file}" -o "${sqlite_file}" || {
+            if ! nsys export -t sqlite "${nsys_file}" -o "${sqlite_file}"; then
                 echo "  Warning: SQLite export failed, using .nsys-rep as fallback"
                 ln -sf "$(realpath "${nsys_file}")" "${sqlite_file}" 2>/dev/null || \
                     cp "${nsys_file}" "${sqlite_file}" 2>/dev/null || true
-            }
+            fi
         else
             echo "  Error: nsys not available and JSON/SQLite not found"
             FAILED_ITEMS+=("${nsys_file}: nsys not available and JSON/SQLite not found")
+            # Still process train.log before returning
+            process_train_log "${nsys_file}" "${output_dir}"
+            echo ""
             return 1
         fi
     fi
-
-    # Create Excel output directory
-    mkdir -p "${output_dir}"
 
     # Check if xlsx files already exist and are newer than source
     local xlsx_exists=false
@@ -195,36 +204,34 @@ process_nsys_rep() {
     # Run Python analyzer
     if [[ -f "${json_file}" ]]; then
         echo "  Running Python analyzer..."
-        python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
+        if python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
             --sqlite "${sqlite_file}" \
             --json "${json_file}" \
             --output "${output_dir}" \
             --iteration "${ITERATION}" \
-            --rank ${RANKS_ARG}
+            --rank ${RANKS_ARG}; then
 
-        local python_exit_code=$?
-        if [[ $python_exit_code -ne 0 ]]; then
+            # Check if xlsx files were generated
+            local xlsx_count=$(find "${output_dir}" -name "*.xlsx" 2>/dev/null | wc -l)
+            if [[ $xlsx_count -gt 0 ]]; then
+                echo "  ✓ Generated $xlsx_count Excel file(s) in: ${output_dir}"
+                nsys_success=true
+            else
+                echo "  Warning: No Excel files found in output directory"
+                FAILED_ITEMS+=("${nsys_file}: No Excel output generated")
+            fi
+        else
+            local python_exit_code=$?
             echo "  Warning: Python analysis failed with exit code $python_exit_code"
             FAILED_ITEMS+=("${nsys_file}: Python analysis failed (exit $python_exit_code)")
-            return 1
-        fi
-
-        # Check if xlsx files were generated
-        local xlsx_count=$(find "${output_dir}" -name "*.xlsx" 2>/dev/null | wc -l)
-        if [[ $xlsx_count -gt 0 ]]; then
-            echo "  ✓ Generated $xlsx_count Excel file(s) in: ${output_dir}"
-            # Process train.log for throughput extraction (if exists)
-            process_train_log "${nsys_file}" "${output_dir}"
-        else
-            echo "  Warning: No Excel files found in output directory"
-            FAILED_ITEMS+=("${nsys_file}: No Excel output generated")
-            return 1
         fi
     else
         echo "  Error: JSON file not available: ${json_file}"
         FAILED_ITEMS+=("${nsys_file}: JSON file not available")
-        return 1
     fi
+
+    # Always process train.log at the end (regardless of nsys success/failure)
+    process_train_log "${nsys_file}" "${output_dir}"
 
     echo ""
     return 0
