@@ -1,24 +1,22 @@
 #!/bin/bash
 # NSYS Profile Analysis Pipeline
-# Scans for .nsys-rep files, exports to JSON/SQLite, and runs Python analysis
+# Scans for .nsys-rep files and generates xlsx reports
 #
 # Usage:
-#   ./run.sh [--iteration N] [--detail] [PATH]
+#   ./run.sh [--iteration N] [--detail] <SCAN_PATH>
 #
 # Examples:
-#   ./run.sh                                    # Scan current directory recursively
-#   ./run.sh /path/to/logs/                     # Scan specific directory recursively
-#   ./run.sh --detail /path/to/logs/            # Enable detail mode (output JSON)
-#   ./run.sh --iteration 20 /path/to/file.nsys-rep  # Analyze specific file
+#   ./run.sh ./logs/                          # Scan directory recursively
+#   ./run.sh --detail ./logs/                 # Enable detail mode (output JSON)
+#   ./run.sh --iteration 20 ./profile.nsys-rep # Analyze specific file
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Default values
 ITERATION=16
-SCAN_DIR="."
+SCAN_DIR=""
 SPECIFIC_FILE=""
 DETAIL_MODE=""
 
@@ -34,7 +32,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            echo "Usage: $0 [OPTIONS] [PATH]"
+            echo "Usage: $0 [OPTIONS] <SCAN_PATH>"
             echo ""
             echo "Options:"
             echo "  --iteration N    Iteration number to analyze (default: 16)"
@@ -42,8 +40,15 @@ while [[ $# -gt 0 ]]; do
             echo "  --help          Show this help message"
             echo ""
             echo "Arguments:"
-            echo "  PATH            Directory to scan or specific .nsys-rep file"
+            echo "  SCAN_PATH       Directory to scan or specific .nsys-rep file"
+            echo ""
+            echo "Output:"
+            echo "  Results saved to <SCAN_PATH>-result/ subdirectory"
             exit 0
+            ;;
+        -*)
+            echo "Error: Unknown option: $1"
+            exit 1
             ;;
         *)
             if [[ -f "$1" && "$1" == *.nsys-rep ]]; then
@@ -51,7 +56,7 @@ while [[ $# -gt 0 ]]; do
             elif [[ -d "$1" ]]; then
                 SCAN_DIR="$1"
             else
-                echo "Error: Unknown option or invalid path: $1"
+                echo "Error: Path not found: $1"
                 exit 1
             fi
             shift
@@ -59,9 +64,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate input
+if [[ -z "$SCAN_DIR" && -z "$SPECIFIC_FILE" ]]; then
+    echo "Error: Please specify a directory or .nsys-rep file"
+    echo "Usage: $0 [OPTIONS] <SCAN_PATH>"
+    exit 1
+fi
+
+# Determine output base directory
+if [[ -n "$SPECIFIC_FILE" ]]; then
+    # For specific file, use its parent directory
+    INPUT_BASE="$(dirname "$SPECIFIC_FILE")"
+    OUTPUT_BASE="${INPUT_BASE}-result"
+else
+    # For directory scan
+    INPUT_BASE="$SCAN_DIR"
+    OUTPUT_BASE="${SCAN_DIR}-result"
+fi
+
 echo "=========================================="
 echo "NSYS Profile Analysis Pipeline"
 echo "=========================================="
+echo "Input: ${SPECIFIC_FILE:-$SCAN_DIR}"
+echo "Output: ${OUTPUT_BASE}"
 echo "Iteration: ${ITERATION}"
 echo "Detail mode: ${DETAIL_MODE:-disabled}"
 echo ""
@@ -75,18 +100,31 @@ fi
 # Function to process a single .nsys-rep file
 process_nsys_rep() {
     local nsys_file="$1"
-    local file_dir=$(dirname "${nsys_file}")
+    # Calculate relative path from INPUT_BASE
+    local abs_nsys_file="$(cd "$(dirname "$nsys_file")" && pwd)/$(basename "$nsys_file")"
+    local abs_input_base="$(cd "$INPUT_BASE" && pwd)"
+    local rel_path="${abs_nsys_file#$abs_input_base/}"
     local base_name=$(basename "${nsys_file}" .nsys-rep)
-    local analyse_dir="${file_dir}/analyse"
-    local json_file="${analyse_dir}/${base_name}.json"
-    local sqlite_file="${analyse_dir}/${base_name}.sqlite"
+    local rel_dir=$(dirname "$rel_path")
+
+    # Output directory: xxx-result/aaa/
+    local output_dir
+    if [[ "$rel_dir" == "." ]]; then
+        output_dir="${OUTPUT_BASE}"
+    else
+        output_dir="${OUTPUT_BASE}/${rel_dir}"
+    fi
+    local json_file="${output_dir}/${base_name}.json"
+    local sqlite_file="${output_dir}/${base_name}.sqlite"
+    local xlsx_file="${output_dir}/${base_name}.xlsx"
 
     echo "Processing: ${nsys_file}"
-    echo "  Base name: ${base_name}"
-    echo "  Analyse dir: ${analyse_dir}"
+    echo "  Relative path: ${rel_path}"
+    echo "  Output dir: ${output_dir}"
+    echo "  Output file: ${xlsx_file}"
 
-    # Create analyse directory
-    mkdir -p "${analyse_dir}"
+    # Create output directory
+    mkdir -p "${output_dir}"
 
     # Export to JSON if not exists or older than source
     if [[ ! -f "${json_file}" ]] || [[ "${nsys_file}" -nt "${json_file}" ]]; then
@@ -124,21 +162,26 @@ process_nsys_rep() {
         PYENV_VERSION=megatron-py3.13.9 pyenv exec python3 "${SCRIPT_DIR}/nsys_profile_analyzer.py" \
             --sqlite "${sqlite_file}" \
             --json "${json_file}" \
-            --output "${analyse_dir}" \
+            --output "${output_dir}" \
             --iteration "${ITERATION}" \
             ${DETAIL_MODE} || {
             echo "  Warning: Python analysis failed"
             return 1
         }
+
+        # Check if xlsx was generated
+        if [[ -f "${xlsx_file}" ]]; then
+            echo "  ✓ Generated: ${xlsx_file}"
+        else
+            echo "  Warning: Expected output file not found"
+        fi
     fi
 
-    echo "  Done: ${base_name}"
-    echo "  Results saved to: ${analyse_dir}"
     echo ""
 }
 
 # Main processing
-if [[ -n "${SPECIFIC_FILE}" ]]; then
+if [[ -n "$SPECIFIC_FILE" ]]; then
     # Process specific file
     process_nsys_rep "${SPECIFIC_FILE}"
 else
@@ -155,15 +198,11 @@ else
     if [[ $found -eq 0 ]]; then
         echo "No .nsys-rep files found in ${SCAN_DIR}"
         echo ""
-        echo "Searched recursively in: ${SCAN_DIR}"
-        echo ""
-        echo "You can specify a file directly:"
-        echo "  $0 /path/to/profile.nsys-rep"
         exit 1
     fi
 fi
 
 echo "=========================================="
 echo "Analysis complete!"
-echo "Results saved in analyse/ subdirectories"
+echo "Results saved to: ${OUTPUT_BASE}"
 echo "=========================================="
