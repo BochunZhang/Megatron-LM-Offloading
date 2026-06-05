@@ -89,6 +89,38 @@ if ! command -v nsys &> /dev/null; then
     echo "Warning: nsys command not found in PATH"
 fi
 
+# Function to process train.log for throughput extraction
+process_train_log() {
+    local nsys_file="$1"
+    local output_dir="$2"
+    local file_dir=$(dirname "$nsys_file")
+    local train_log="${file_dir}/train.log"
+
+    # Only process if train.log exists
+    if [[ ! -f "${train_log}" ]]; then
+        return 0
+    fi
+
+    echo "  Found train.log, extracting throughput data..."
+
+    # Output path for throughput Excel (same directory as nsys-rep output)
+    local throughput_xlsx="${output_dir}/throughput_summary.xlsx"
+
+    # Run Python script to extract throughput
+    python3 "${SCRIPT_DIR}/extract_throughput.py" \
+        "${throughput_xlsx}" \
+        "${train_log}"
+
+    local python_exit_code=$?
+    if [[ $python_exit_code -ne 0 ]]; then
+        echo "  Warning: Throughput extraction failed with exit code $python_exit_code"
+    elif [[ -f "${throughput_xlsx}" ]]; then
+        echo "  ✓ Throughput data extracted to: ${throughput_xlsx}"
+    fi
+
+    return 0
+}
+
 # Function to process a single .nsys-rep file
 process_nsys_rep() {
     local nsys_file="$1"
@@ -151,6 +183,22 @@ process_nsys_rep() {
     # Create Excel output directory
     mkdir -p "${output_dir}"
 
+    # Check if xlsx files already exist and are newer than source
+    local xlsx_exists=false
+    local xlsx_count=$(find "${output_dir}" -name "*.xlsx" -type f 2>/dev/null | wc -l)
+    if [[ $xlsx_count -gt 0 ]]; then
+        # Check if any xlsx is newer than json file
+        local newest_xlsx=$(find "${output_dir}" -name "*.xlsx" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+        if [[ -n "$newest_xlsx" && "$newest_xlsx" -nt "$json_file" ]]; then
+            echo "  Excel files already exist and are up-to-date: ${output_dir}"
+            echo "  ✓ Found $xlsx_count Excel file(s), skipping analysis"
+            # Still process train.log for throughput extraction
+            process_train_log "${nsys_file}" "${output_dir}"
+            echo ""
+            return 0
+        fi
+    fi
+
     # Run Python analyzer
     if [[ -f "${json_file}" ]]; then
         echo "  Running Python analyzer..."
@@ -172,6 +220,8 @@ process_nsys_rep() {
         local xlsx_count=$(find "${output_dir}" -name "*.xlsx" 2>/dev/null | wc -l)
         if [[ $xlsx_count -gt 0 ]]; then
             echo "  ✓ Generated $xlsx_count Excel file(s) in: ${output_dir}"
+            # Process train.log for throughput extraction
+            process_train_log "${nsys_file}" "${output_dir}"
         else
             echo "  Warning: No Excel files found in output directory"
             FAILED_ITEMS+=("${nsys_file}: No Excel output generated")
