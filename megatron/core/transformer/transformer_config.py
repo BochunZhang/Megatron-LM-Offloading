@@ -913,6 +913,10 @@ class TransformerConfig(ModelParallelConfig):
     """If True, log model parameter information (shapes, dtypes, memory usage)
     to a JSON file during the first training iteration."""
 
+    log_model_info_path: str = "./temp-logs"
+    """Path to save the model parameter information JSON file.
+    Default is 'model_parameters.json' in the current directory."""
+
     def __post_init__(self):
         """Python dataclass method that is used to modify attributes after initialization.
         See https://docs.python.org/3/library/dataclasses.html#post-init-processing for more

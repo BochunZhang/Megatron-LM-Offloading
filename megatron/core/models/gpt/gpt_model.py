@@ -600,7 +600,7 @@ class GPTModel(LanguageModule):
 
         return module_info
 
-    def log_model_parameters_info(self, output_path: str = "model_parameters.json"):
+    def log_model_parameters_info(self, output_path: str):
         """Log model parameter information to a JSON file.
 
         Args:
@@ -612,30 +612,34 @@ class GPTModel(LanguageModule):
         # Build tree starting from model
         model_info = self._build_model_info_tree(self, parent_name="gpt")
 
+        # Get vp_stage if available (VPP mode creates multiple model chunks)
+        vp_stage = getattr(self, 'vp_stage', None)
+
         # Remove internal field and add model name as root
         root_info = {
             "name": "gpt",
             "type": self.__class__.__name__,
             "total_params": model_info.get("total_params", 0),
             "total_memory": model_info.get("total_memory", "0B"),
+            "vp_stage": vp_stage,
             "children": model_info.get("children", [])
         }
 
-        # Save to file (only on rank 0)
+        # Build filename with rank and optional vp_stage
         if torch.distributed.is_initialized():
             rank = torch.distributed.get_rank()
-            if rank == 0:
-                # Add rank info to filename
-                base, ext = os.path.splitext(output_path)
-                output_path = f"{base}_rank{rank}{ext}"
-                with open(output_path, 'w') as f:
-                    json.dump(root_info, f, indent=2)
-                print(f"Model parameter info saved to {output_path}")
         else:
-            # Non-distributed case
-            with open(output_path, 'w') as f:
-                json.dump(root_info, f, indent=2)
-            print(f"Model parameter info saved to {output_path}")
+            rank = 0
+
+        if vp_stage is not None:
+            filename = f"parameters_rank[{rank}]_vp[{vp_stage}].json"
+        else:
+            filename = f"parameters_rank[{rank}].json"
+
+        output_path = os.path.join(output_path, filename)
+        with open(output_path, 'w') as f:
+            json.dump(root_info, f, indent=2)
+        print(f"Model parameter info saved to {output_path}")
 
     def forward(
         self,
@@ -671,7 +675,7 @@ class GPTModel(LanguageModule):
 
         # Log model parameters on first iteration if enabled
         if self.config.log_model_parameters and not self._logged_model_parameters:
-            self.log_model_parameters_info()
+            self.log_model_parameters_info(self.config.log_model_info_path)
             self._logged_model_parameters = True
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
