@@ -524,12 +524,37 @@ class GPTModel(LanguageModule):
         """
         import json
 
+        def format_memory(bytes_val: int) -> str:
+            """Format bytes to human readable string with dynamic unit."""
+            units = ["B", "KB", "MB", "GB", "TB"]
+            unit_idx = 0
+            value = float(bytes_val)
+            while value >= 1024.0 and unit_idx < len(units) - 1:
+                value /= 1024.0
+                unit_idx += 1
+            if unit_idx == 0:
+                return f"{int(value)}{units[unit_idx]}"
+            else:
+                return f"{value:.2f}{units[unit_idx]}"
+
+        def format_number(num: int) -> str:
+            """Format number to human readable string with K/M/B/T units."""
+            if num < 1000:
+                return str(num)
+            units = ["", "K", "M", "B", "T"]
+            unit_idx = 0
+            value = float(num)
+            while value >= 1000.0 and unit_idx < len(units) - 1:
+                value /= 1000.0
+                unit_idx += 1
+            return f"{value:.2f}{units[unit_idx]}"
+
         # Get current module name
         current_name = parent_name
 
         # Calculate total params and memory for this module
         total_params = 0
-        total_memory = 0
+        total_memory_bytes = 0
 
         # Process children: first parameters, then submodules
         children = []
@@ -540,15 +565,18 @@ class GPTModel(LanguageModule):
             numel = param.numel()
             memory_bytes = numel * param.element_size()
             total_params += numel
-            total_memory += memory_bytes
+            total_memory_bytes += memory_bytes
+
+            # Get parameter class name
+            param_class = param.__class__.__name__
 
             children.append({
                 "name": full_name,
-                "type": "Parameter",
+                "type": param_class,
                 "shape": list(param.shape),
-                "numel": numel,
+                "numel": format_number(numel),
                 "dtype": str(param.dtype),
-                "memory_bytes": memory_bytes
+                "memory": format_memory(memory_bytes)
             })
 
         # Process submodules (in registration order)
@@ -556,15 +584,17 @@ class GPTModel(LanguageModule):
             full_name = f"{current_name}.{name}" if current_name else name
             submodule_info = self._build_model_info_tree(submodule, full_name)
             children.append(submodule_info)
-            total_params += submodule_info.get("total_params", 0)
-            total_memory += submodule_info.get("total_memory_bytes", 0)
+            total_params += submodule_info.get("_total_params_raw", 0)
+            total_memory_bytes += submodule_info.get("_total_memory_bytes", 0)
 
-        # Build module info
+        # Build module info (include hidden fields for accumulation)
         module_info = {
             "name": current_name,
             "type": module.__class__.__name__,
-            "total_params": total_params,
-            "total_memory_bytes": total_memory,
+            "total_params": format_number(total_params),
+            "total_memory": format_memory(total_memory_bytes),
+            "_total_params_raw": total_params,  # Hidden field for accumulation
+            "_total_memory_bytes": total_memory_bytes,  # Hidden field for accumulation
             "children": children
         }
 
@@ -582,12 +612,12 @@ class GPTModel(LanguageModule):
         # Build tree starting from model
         model_info = self._build_model_info_tree(self, parent_name="gpt")
 
-        # Add model name as root
+        # Remove internal field and add model name as root
         root_info = {
             "name": "gpt",
             "type": self.__class__.__name__,
             "total_params": model_info.get("total_params", 0),
-            "total_memory_bytes": model_info.get("total_memory_bytes", 0),
+            "total_memory": model_info.get("total_memory", "0B"),
             "children": model_info.get("children", [])
         }
 
