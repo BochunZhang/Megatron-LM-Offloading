@@ -906,6 +906,13 @@ class TransformerConfig(ModelParallelConfig):
     min_offloaded_tensor_size: int = 1024 * 1024
     """The minimum size of the tensor to be offloaded."""
 
+    #####################################
+    # Model Parameter Logging
+    #####################################
+    log_model_parameters: bool = False
+    """If True, log model parameter information (shapes, dtypes, memory usage)
+    to a JSON file during the first training iteration."""
+
     def __post_init__(self):
         """Python dataclass method that is used to modify attributes after initialization.
         See https://docs.python.org/3/library/dataclasses.html#post-init-processing for more

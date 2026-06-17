@@ -269,6 +269,9 @@ class GPTModel(LanguageModule):
 
         set_nvtx_name(self, "gpt")
 
+        # Flag for first iteration parameter logging
+        self._logged_model_parameters = False
+
         # self.enable_nvtx_profiling()
 
     def enable_nvtx_profiling(self, enabled: bool = True):
@@ -509,6 +512,101 @@ class GPTModel(LanguageModule):
                     off_interface.mark_not_offloadable(param)
             self.disable_param_offloading = False
 
+    def _build_model_info_tree(self, module: torch.nn.Module, parent_name: str = ""):
+        """Recursively build model parameter information tree.
+
+        Args:
+            module: Current module to process
+            parent_name: Full name of parent module
+
+        Returns:
+            Dict containing module info with children (parameters and submodules)
+        """
+        import json
+
+        # Get current module name
+        current_name = parent_name
+
+        # Calculate total params and memory for this module
+        total_params = 0
+        total_memory = 0
+
+        # Process children: first parameters, then submodules
+        children = []
+
+        # Process parameters (in registration order)
+        for name, param in module.named_parameters(recurse=False):
+            full_name = f"{current_name}.{name}" if current_name else name
+            numel = param.numel()
+            memory_bytes = numel * param.element_size()
+            total_params += numel
+            total_memory += memory_bytes
+
+            children.append({
+                "name": full_name,
+                "type": "Parameter",
+                "shape": list(param.shape),
+                "numel": numel,
+                "dtype": str(param.dtype),
+                "memory_bytes": memory_bytes
+            })
+
+        # Process submodules (in registration order)
+        for name, submodule in module.named_children():
+            full_name = f"{current_name}.{name}" if current_name else name
+            submodule_info = self._build_model_info_tree(submodule, full_name)
+            children.append(submodule_info)
+            total_params += submodule_info.get("total_params", 0)
+            total_memory += submodule_info.get("total_memory_bytes", 0)
+
+        # Build module info
+        module_info = {
+            "name": current_name,
+            "type": module.__class__.__name__,
+            "total_params": total_params,
+            "total_memory_bytes": total_memory,
+            "children": children
+        }
+
+        return module_info
+
+    def log_model_parameters_info(self, output_path: str = "model_parameters.json"):
+        """Log model parameter information to a JSON file.
+
+        Args:
+            output_path: Path to save the JSON file
+        """
+        import json
+        import os
+
+        # Build tree starting from model
+        model_info = self._build_model_info_tree(self, parent_name="gpt")
+
+        # Add model name as root
+        root_info = {
+            "name": "gpt",
+            "type": self.__class__.__name__,
+            "total_params": model_info.get("total_params", 0),
+            "total_memory_bytes": model_info.get("total_memory_bytes", 0),
+            "children": model_info.get("children", [])
+        }
+
+        # Save to file (only on rank 0)
+        if torch.distributed.is_initialized():
+            rank = torch.distributed.get_rank()
+            if rank == 0:
+                # Add rank info to filename
+                base, ext = os.path.splitext(output_path)
+                output_path = f"{base}_rank{rank}{ext}"
+                with open(output_path, 'w') as f:
+                    json.dump(root_info, f, indent=2)
+                print(f"Model parameter info saved to {output_path}")
+        else:
+            # Non-distributed case
+            with open(output_path, 'w') as f:
+                json.dump(root_info, f, indent=2)
+            print(f"Model parameter info saved to {output_path}")
+
     def forward(
         self,
         input_ids: Tensor,
@@ -540,6 +638,11 @@ class GPTModel(LanguageModule):
         """
         if self.config.fine_grained_activation_offloading:
             self.preprocess_for_fine_grained_offloading()
+
+        # Log model parameters on first iteration if enabled
+        if self.config.log_model_parameters and not self._logged_model_parameters:
+            self.log_model_parameters_info()
+            self._logged_model_parameters = True
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
