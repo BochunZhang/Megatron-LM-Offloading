@@ -66,6 +66,7 @@ param_to_arg() {
         moe) echo "--moe-freq $value" ;;
         seq-len) echo "--seq-length $value" ;;
         pp-layout) echo "--pipeline-parallel-layout $value" ;;
+        iter) echo "--train-iters $value" ;;
         # echo long name
         *) echo "--$name $value" ;;
     esac
@@ -99,6 +100,12 @@ feature_to_args() {
                 optim|opt) args+=" --offload-optim" ;;
             esac
         done
+    fi
+
+    # Check log_model
+    local log_model=$(yq '.feature.log_model // false' "$file")
+    if [[ "$log_model" == "true" ]]; then
+        args+=" --log-model"
     fi
 
     # Check fine-grained offload modules

@@ -54,6 +54,7 @@ PP_LAYOUT=""
 # Advanced features
 ENABLE_PROFILE=false
 ENABLE_GRAPH=false
+ENABLE_LOG_MODEL=false
 
 # Offload settings
 OFFLOAD_ACTIVATION=false
@@ -70,7 +71,7 @@ CPU_OFFLOADING_DOUBLE_BUFFERING=false
 # Advanced features: --profile, --graph, --offload-act, --offload-weight, --offload-optim, --offload-fine, --offload-fine-modules
 
 params=$(getopt -o "" --long \
-  "tensor-parallel:,pipeline-parallel:,expert-parallel:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pipeline-parallel-layout:,dispatcher:,train-iters:,profile,graph,offload-act,offload-weight,offload-optim,offload-fine,offload-fine-modules:,optimizer-offload-fraction:" \
+  "tensor-parallel:,pipeline-parallel:,expert-parallel:,micro-batch-size:,global-batch-size:,num-expert:,num-layer:,moe-freq:,seq-length:,pipeline-parallel-layout:,dispatcher:,train-iters:,profile,graph,log-model,offload-act,offload-weight,offload-optim,offload-fine,offload-fine-modules:,optimizer-offload-fraction:" \
   -- "$@")
 eval set -- "$params"
 
@@ -90,6 +91,7 @@ while true; do
         --train-iters) TRAIN_ITERS="$2"; TRAIN_SAMPLES=$((TRAIN_ITERS * GLOBAL_BATCH_SIZE)); shift 2 ;;
         --profile) ENABLE_PROFILE=true; shift ;;
         --graph) ENABLE_GRAPH=true; shift ;;
+        --log-model) ENABLE_LOG_MODEL=true; shift ;;
         --offload-act) OFFLOAD_ACTIVATION=true; CPU_OFFLOADING=true; CPU_OFFLOADING_DOUBLE_BUFFERING=true; shift ;;
         --offload-weight) OFFLOAD_WEIGHTS=true; CPU_OFFLOADING=true; CPU_OFFLOADING_DOUBLE_BUFFERING=true; shift ;;
         --offload-optim) OFFLOAD_OPTIMIZER=true; shift ;;
@@ -442,17 +444,24 @@ DATA_ARGS=(
     --no-create-attention-mask-in-dataloader
 )
 
+# Build LOGGING_ARGS based on log_model feature
 LOGGING_ARGS=(
-    --log-timers-to-tensorboard
-    --log-memory-to-tensorboard
-    --log-validation-ppl-to-tensorboard
+    # --log-timers-to-tensorboard
+    # --log-memory-to-tensorboard
+    # --log-validation-ppl-to-tensorboard
+    # --tensorboard-dir $TENSORBOARD_PATH
     --log-throughput
     --log-interval 1
     --logging-level 40
-    --tensorboard-dir $TENSORBOARD_PATH
-    --record-memory-history
-    --memory-snapshot-path $BASE_PATH
 )
+
+if [ "$ENABLE_LOG_MODEL" = true ]; then
+    LOGGING_ARGS+=(
+        --record-memory-history
+        --memory-snapshot-path $LOGS_PATH/memory_snapshot
+        --log-model-info-path $LOGS_PATH/model_info.json
+    )
+fi
 
 LOAD_ARGS=(
     --no-load-optim
@@ -564,7 +573,10 @@ if [ $RANK -eq 0 ]; then
     if [ -n "${WORLD_SIZE+x}" ] && [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
       sleep 60
     fi
-    mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP 2>/dev/null || true
+    # Only move BASE_PATH if log_model is not enabled (since files are already in place)
+    if [ "$ENABLE_LOG_MODEL" = false ]; then
+        mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP 2>/dev/null || true
+    fi
 fi
 
 echo "train.sh: Training completed. Logs: $LOGS_PATH/train.log"
