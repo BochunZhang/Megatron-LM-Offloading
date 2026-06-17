@@ -170,7 +170,12 @@ case "$DISPATCHER" in
 esac
 
 # ========== 5. Derived Variables ==========
-DP=$((WORLD_SIZE / TP / PP))
+# Ensure WORLD_SIZE is set before calculating DP
+if [ -z "${WORLD_SIZE+x}" ]; then
+    WORLD_SIZE=$LOCAL_WORLD_SIZE
+fi
+
+DP=$((WORLD_SIZE / TP / PP / EP))
 
 if [ -n "${WORLD_SIZE+x}" ] && [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
     MODEL="dlc-deepseek-v3-dp${DP}-tp${TP}-pp${PP}-ep${EP}-mbs${MICRO_BATCH_SIZE}-gbs${GLOBAL_BATCH_SIZE}-expert${NUM_EXPERT}-layer${NUM_LAYER}-seq${SEQ_LEN}"

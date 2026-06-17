@@ -251,7 +251,7 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # params
-DP=$[$WORLD_SIZE / $TP / $PP]
+DP=$[$WORLD_SIZE / $TP / $PP / $EP]
 
 if [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
     MODEL="dlc-deepseek-v3-dp$DP-tp$TP-pp$PP-ep$EP-mbs$MICRO_BATCH_SIZE-gbs$GLOBAL_BATCH_SIZE-expert$NUM_EXPERT-layer$NUM_LAYER-seq$SEQ_LEN"
