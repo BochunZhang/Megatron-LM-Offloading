@@ -557,7 +557,7 @@ class GPTModel(LanguageModule):
         total_memory_bytes = 0
 
         # Process children: first parameters, then submodules
-        children = []
+        parameters = []
 
         # Process parameters (in registration order)
         for name, param in module.named_parameters(recurse=False):
@@ -570,7 +570,7 @@ class GPTModel(LanguageModule):
             # Get parameter class name
             param_class = param.__class__.__name__
 
-            children.append({
+            parameters.append({
                 "name": full_name,
                 "type": param_class,
                 "shape": list(param.shape),
@@ -580,10 +580,11 @@ class GPTModel(LanguageModule):
             })
 
         # Process submodules (in registration order)
+        submodules = []
         for name, submodule in module.named_children():
             full_name = f"{current_name}.{name}" if current_name else name
             submodule_info = self._build_model_info_tree(submodule, full_name)
-            children.append(submodule_info)
+            submodules.append(submodule_info)
             total_params += submodule_info.get("_total_params_raw", 0)
             total_memory_bytes += submodule_info.get("_total_memory_bytes", 0)
 
@@ -593,9 +594,10 @@ class GPTModel(LanguageModule):
             "type": module.__class__.__name__,
             "total_params": format_number(total_params),
             "total_memory": format_memory(total_memory_bytes),
-            "_total_params_raw": total_params,  # Hidden field for accumulation
-            "_total_memory_bytes": total_memory_bytes,  # Hidden field for accumulation
-            "children": children
+            "total_params_num": total_params,  # Hidden field for accumulation
+            "total_memory_bytes": total_memory_bytes,  # Hidden field for accumulation
+            "parameters": parameters,
+            "submodules": submodules,
         }
 
         return module_info
