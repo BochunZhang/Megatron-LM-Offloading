@@ -619,15 +619,7 @@ class GPTModel(LanguageModule):
         # Get vp_stage if available (VPP mode creates multiple model chunks)
         vp_stage = getattr(self, 'vp_stage', None)
 
-        # Remove internal field and add model name as root
-        root_info = {
-            "name": "gpt",
-            "type": self.__class__.__name__,
-            "total_params": model_info.get("total_params", 0),
-            "total_memory": model_info.get("total_memory", "0B"),
-            "vp_stage": vp_stage,
-            "children": model_info.get("children", [])
-        }
+        model_info["vp_stage"] = vp_stage
 
         # Build filename with rank and optional vp_stage
         if torch.distributed.is_initialized():
@@ -642,7 +634,7 @@ class GPTModel(LanguageModule):
 
         output_path = os.path.join(output_path, filename)
         with open(output_path, 'w') as f:
-            json.dump(root_info, f, indent=2)
+            json.dump(model_info, f, indent=2)
         print(f"Model parameter info saved to {output_path}")
 
     def forward(
