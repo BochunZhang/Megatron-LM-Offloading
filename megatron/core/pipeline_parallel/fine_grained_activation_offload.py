@@ -379,6 +379,30 @@ class OffloadTensorGroup:
         self.total_offload_bytes += tensor.numel() * tensor.element_size()
         self.total_tensor_count += 1
 
+    def record_offload_info(self, tensor, offloaded: bool):
+        """Record the offload information for a tensor.
+
+        Args:
+            tensor: The tensor being processed
+            offloaded: True if tensor was actually offloaded, False otherwise
+        """
+        if not hasattr(self, 'offload_records'):
+            self.offload_records = []
+
+        self.offload_records.append(
+            {
+                "id": hex(id(tensor)),
+                "type": tensor.__class__.__name__,
+                "shape": list(tensor.shape),
+                "dtype": str(tensor.dtype),
+                "params": tensor.numel(),                    # 元素数量
+                "memory": tensor.numel() * tensor.element_size(),
+                "offload": offloaded,
+                "offloading_activation": getattr(tensor, "offloading_activation", None)
+            }
+        )
+
+
 
 class PipelineOffloadManager:
     """
@@ -572,6 +596,34 @@ class PipelineOffloadManager:
         self._offload_summary_bytes = dict(total_offload_bytes)
         self._offload_summary_total_bytes = int(sum(total_offload_bytes.values()))
         print_offload_summary_table(total_offload_bytes)
+        self.dump_offload_records_to_json()
+
+    def dump_offload_records_to_json(self):
+        """Dump offload records to JSON file grouped by group name."""
+        import json
+        import os
+
+        log_path = FineGrainedActivationOffloadingInterface.getlog_model_info_path()
+
+        # Ensure directory exists
+        if not os.path.exists(log_path):
+            os.makedirs(log_path, exist_ok=True)
+
+        # Collect records grouped by group name
+        records_by_group = {}
+        for chunk in self._cached_chunks_forward:
+            for group in chunk.offload_groups:
+                if hasattr(group, 'offload_records'):
+                    if (group._name not in records_by_group) and (group.offload > 0):
+                        records_by_group[group._name] = group.offload_records
+                    delattr(group, 'offload_records')
+
+        # Write JSON file
+        assert torch.distributed.is_initialized()
+        rank = torch.distributed.get_rank()
+        output_file = os.path.join(log_path, f"fine_grained_offload.rank{rank}.json")
+        with open(output_file, 'w') as f:
+            json.dump(records_by_group, f, indent=2)
 
     def push(self, handler):
         """Add a chunk handler to the backward queue."""
@@ -889,8 +941,11 @@ class ChunkOffloadHandler:
                     )
                     if self.is_warmup:
                         group_to_offload.update_offload_info(tensor_on_device)
+                        group_to_offload.record_offload_info(tensor_on_device, offloaded=True)
                     tensor_on_device.record_stream(self.d2h_stream)
                     group_to_offload.push_tensor(tensor_tag, state)
+                elif self.is_warmup:
+                    group_to_offload.record_offload_info(tensor_on_device, offloaded=False)
             group_to_offload.record_offload_event(self.d2h_stream)
         self._groups_to_offload.pop()
         torch.cuda.nvtx.range_pop()
@@ -1075,7 +1130,7 @@ class FineGrainedOffloadingGroupCommitFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, tensor, cur_forward_chunk, name, forced_released_tensors, delay_offload):
         # pylint: disable=missing-function-docstring
-        debug_rank("FineGrainedOffloadingGroupCommitFunction forward")
+        # debug_rank("FineGrainedOffloadingGroupCommitFunction forward")
 
         if delay_offload:
             PipelineOffloadManager.get_instance().push_offload_groups(
@@ -1090,7 +1145,7 @@ class FineGrainedOffloadingGroupCommitFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, *grad_output):
         # pylint: disable=missing-function-docstring
-        debug_rank("FineGrainedOffloadingGroupCommitFunction backward")
+        # debug_rank("FineGrainedOffloadingGroupCommitFunction backward")
 
         cpu_offload_handler = ctx.cpu_offload_handler
         cpu_offload_handler.on_group_commit_backward(ctx.name)
@@ -1215,6 +1270,8 @@ def fine_grained_offloading_backward_record(tensor, event: torch.cuda.Event) -> 
 class FineGrainedActivationOffloadingInterface:
     """Interface for fine-grained activation offloading."""
 
+    log_model_info_path = "./temp-logs"
+
     def __init__(self, offload: bool, tensor: torch.Tensor, name: str):
         self.offload = offload
         self.tensor = tensor
@@ -1231,6 +1288,16 @@ class FineGrainedActivationOffloadingInterface:
         """Exit context manager to disable activation offloading hooks."""
         if self.offload:
             PipelineOffloadManager.get_instance().__exit__()
+
+    @staticmethod
+    def setlog_model_info_path(path: str):
+        """Set the path for logging offload information."""
+        FineGrainedActivationOffloadingInterface.log_model_info_path = path
+
+    @staticmethod
+    def getlog_model_info_path() -> str:
+        """Get the path for logging offload information."""
+        return FineGrainedActivationOffloadingInterface.log_model_info_path
 
     @staticmethod
     def init_chunk_handler(vp_size, vp_stage, min_offloaded_tensor_size):
