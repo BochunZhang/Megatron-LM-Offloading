@@ -459,7 +459,7 @@ if [ "$ENABLE_LOG_MODEL" = true ]; then
         --record-memory-history
         --memory-snapshot-path $LOGS_PATH/memory_snapshot
         --log-model-info
-        --log-model-info-path $LOGS_PATH/model_info
+        --log-model-info-path $LOGS_PATH/info
     )
 
     mkdir -p $LOGS_PATH/info
