@@ -459,6 +459,7 @@ if [ "$ENABLE_LOG_MODEL" = true ]; then
     LOGGING_ARGS+=(
         --record-memory-history
         --memory-snapshot-path $LOGS_PATH/memory_snapshot
+        --log-model-info
         --log-model-info-path $LOGS_PATH/model_info.json
     )
 fi
