@@ -583,13 +583,13 @@ class GPTModel(LanguageModule):
 
             if info["type"] == 'MXFP8Tensor':
                 data = {}
-                data["type"] = "MXFP8TensorBase"
-                data["fp8_dtype"] = str(getattr(param, '_fp8_dtype', None))
                 data["rowwise_data"] = tensor_info(getattr(param, '_rowwise_data', None))
                 data["colwise_data"] = tensor_info(getattr(param, '_columnwise_data', None))
                 data["rowwise_scale_inv"] = tensor_info(getattr(param, '_rowwise_scale_inv', None))
                 data["colwise_scale_inv"] = tensor_info(getattr(param, '_columnwise_scale_inv', None))
                 memory += sum(t["memory"] for t in data.values() if t is not None)
+                data["type"] = "MXFP8TensorBase"
+                data["fp8_dtype"] = str(getattr(param, '_fp8_dtype', None))
                 info["memory"] = memory
                 info["memory_f"] = format_memory(memory)
                 info["data"] = data
