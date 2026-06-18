@@ -549,12 +549,14 @@ class GPTModel(LanguageModule):
                 unit_idx += 1
             return f"{value:.2f}{units[unit_idx]}"
 
-        def tensor_info(tensor: torch.Tensor) -> Dict:
+        def tensor_info(tensor: torch.Tensor, name: str) -> Dict:
             """Get information about a tensor."""
             if tensor is None:
                 return None
             return {
                 "id": hex(id(tensor)),
+                "name": name,
+                "type": tensor.__class__.__name__,
                 "shape": list(tensor.shape),
                 "dtype": str(tensor.dtype),
                 "params": tensor.numel(),                    # 元素数量
@@ -577,22 +579,22 @@ class GPTModel(LanguageModule):
         for name, param in module.named_parameters(recurse=False):
             full_name = f"{current_name}.{name}" if current_name else name
 
-            info = tensor_info(param)   # 获取参数
-            info["name"] = full_name
-            info["type"] = param.__class__.__name__
+            info = tensor_info(param, full_name)   # 获取参数
 
             if info["type"] == 'MXFP8Tensor':
                 data = {}
-                data["rowwise_data"] = tensor_info(getattr(param, '_rowwise_data', None))
-                data["colwise_data"] = tensor_info(getattr(param, '_columnwise_data', None))
-                data["rowwise_scale_inv"] = tensor_info(getattr(param, '_rowwise_scale_inv', None))
-                data["colwise_scale_inv"] = tensor_info(getattr(param, '_columnwise_scale_inv', None))
-                memory = sum(t["memory"] for t in data.values() if t is not None)
+                tensors = []
+                tensors.append(tensor_info(getattr(param, '_rowwise_data', None), 'rowwise_data'))
+                tensors.append(tensor_info(getattr(param, '_columnwise_data', None), 'colwise_data'))
+                tensors.append(tensor_info(getattr(param, '_rowwise_scale_inv', None), 'rowwise_scale_inv'))
+                tensors.append(tensor_info(getattr(param, '_columnwise_scale_inv', None), 'colwise_scale_inv'))
+                memory = sum(t["memory"] for t in tensors if t is not None)
                 data["type"] = "MXFP8TensorBase"
                 data["fp8_dtype"] = str(getattr(param, '_fp8_dtype', None))
+                data["tensors"] = tensors
                 info["memory"] = memory
                 info["memory_f"] = format_memory(memory)
-                info["data"] = data
+                info["datas"] = data
             parameters.append(info)
 
             total_params += info["params"]
