@@ -609,6 +609,8 @@ class GPTModel(LanguageModule):
         import json
         import os
 
+        os.makedirs(output_path, exist_ok=True)
+
         # Build tree starting from model
         model_info = self._build_model_info_tree(self, parent_name="gpt")
 
