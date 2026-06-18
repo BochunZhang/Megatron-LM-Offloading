@@ -909,7 +909,7 @@ class TransformerConfig(ModelParallelConfig):
     #####################################
     # Model Parameter Logging
     #####################################
-    log_model_parameters: bool = False
+    log_model_info: bool = False
     """If True, log model parameter information (shapes, dtypes, memory usage)
     to a JSON file during the first training iteration."""
 
