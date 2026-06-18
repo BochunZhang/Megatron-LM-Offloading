@@ -578,10 +578,7 @@ if [ $RANK -eq 0 ]; then
     if [ -n "${WORLD_SIZE+x}" ] && [ $WORLD_SIZE -gt $LOCAL_WORLD_SIZE ]; then
       sleep 60
     fi
-    # Only move BASE_PATH if log_model is not enabled (since files are already in place)
-    if [ "$ENABLE_LOG_MODEL" = false ]; then
-        mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP 2>/dev/null || true
-    fi
+    mv $BASE_PATH $WORKSPACE_PATH/logs/$MODEL-$TIMESTEMP 2>/dev/null || true
 fi
 
 echo "train.sh: Training completed. Logs: $LOGS_PATH/train.log"
