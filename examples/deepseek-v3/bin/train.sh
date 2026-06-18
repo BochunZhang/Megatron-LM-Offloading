@@ -198,7 +198,6 @@ CHECKPOINTS_PATH=$LOGS_PATH/checkpoints
 # ========== 6. Log Setup ==========
 rm -rf $LOGS_PATH
 mkdir -p $WORKSPACE_PATH/logs
-mkdir -p $TENSORBOARD_PATH
 mkdir -p $CHECKPOINTS_PATH
 mkdir -p ./data-cache
 
@@ -446,10 +445,6 @@ DATA_ARGS=(
 
 # Build LOGGING_ARGS based on log_model feature
 LOGGING_ARGS=(
-    # --log-timers-to-tensorboard
-    # --log-memory-to-tensorboard
-    # --log-validation-ppl-to-tensorboard
-    # --tensorboard-dir $TENSORBOARD_PATH
     --log-throughput
     --log-interval 1
     --logging-level 40
@@ -457,13 +452,18 @@ LOGGING_ARGS=(
 
 if [ "$ENABLE_LOG_MODEL" = true ]; then
     LOGGING_ARGS+=(
+        --log-timers-to-tensorboard
+        --log-memory-to-tensorboard
+        --log-validation-ppl-to-tensorboard
+        --tensorboard-dir $TENSORBOARD_PATH
         --record-memory-history
         --memory-snapshot-path $LOGS_PATH/memory_snapshot
         --log-model-info
         --log-model-info-path $LOGS_PATH/model_info
     )
 
-    mkdir -p $LOGS_PATH/model_info
+    mkdir -p $LOGS_PATH/info
+    mkdir -p $TENSORBOARD_PATH
 fi
 
 LOAD_ARGS=(
