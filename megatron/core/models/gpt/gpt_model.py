@@ -512,7 +512,7 @@ class GPTModel(LanguageModule):
                     off_interface.mark_not_offloadable(param)
             self.disable_param_offloading = False
 
-    def _build_model_info_tree(self, module: torch.nn.Module, parent_name: str = ""):
+    def build_model_info_tree(self, module: torch.nn.Module, parent_name: str = ""):
         """Recursively build model parameter information tree.
 
         Args:
@@ -549,12 +549,26 @@ class GPTModel(LanguageModule):
                 unit_idx += 1
             return f"{value:.2f}{units[unit_idx]}"
 
+        def tensor_info(tensor: torch.nn.Tensor) -> Dict:
+            """Get information about a tensor."""
+            if tensor is None:
+                return None
+            return {
+                "id": hex(id(tensor)),
+                "shape": list(tensor.shape),
+                "dtype": str(tensor.dtype),
+                "params": tensor.numel(),                    # 元素数量
+                "memory": tensor.numel() * tensor.element_size(),
+                "params_f": format_number(tensor.numel()),
+                "memory_f": format_memory(tensor.numel() * tensor.element_size())
+            }
+
         # Get current module name
         current_name = parent_name
 
         # Calculate total params and memory for this module
         total_params = 0
-        total_memory_bytes = 0
+        total_memory = 0
 
         # Process children: first parameters, then submodules
         parameters = []
@@ -562,44 +576,51 @@ class GPTModel(LanguageModule):
         # Process parameters (in registration order)
         for name, param in module.named_parameters(recurse=False):
             full_name = f"{current_name}.{name}" if current_name else name
-            numel = param.numel()
-            memory_bytes = numel * param.element_size()
-            total_params += numel
-            total_memory_bytes += memory_bytes
 
-            # Get parameter class name
-            param_class = param.__class__.__name__
+            info = tensor_info(param)   # 获取参数
+            info["name"] = full_name
+            info["type"] = param.__class__.__name__
 
-            parameters.append({
-                "name": full_name,
-                "type": param_class,
-                "shape": list(param.shape),
-                "numel": format_number(numel),
-                "dtype": str(param.dtype),
-                "memory": format_memory(memory_bytes)
-            })
+            if info["type"] == 'MXFP8Tensor':
+                data = {}
+                data["type"] = "MXFP8TensorBase"
+                data["fp8_dtype"] = str(getattr(param, '_fp8_dtype', None))
+                data["rowwise_data"] = tensor_info(getattr(param, '_rowwise_data', None))
+                data["colwise_data"] = tensor_info(getattr(param, '_columnwise_data', None))
+                data["rowwise_scale_inv"] = tensor_info(getattr(param, '_rowwise_scale_inv', None))
+                data["colwise_scale_inv"] = tensor_info(getattr(param, '_columnwise_scale_inv', None))
+                memory += sum(t["memory"] for t in data.values() if t is not None)
+                info["memory"] = memory
+                info["memory_f"] = format_memory(memory)
+                info["data"] = data
+            parameters.append(info)
+
+            total_params += info["params"]
+            total_memory += info["memory"]
 
         # Process submodules (in registration order)
         submodules = []
         for name, submodule in module.named_children():
             full_name = f"{current_name}.{name}" if current_name else name
-            submodule_info = self._build_model_info_tree(submodule, full_name)
+            submodule_info = self.build_model_info_tree(submodule, full_name)
             submodules.append(submodule_info)
-            total_params += submodule_info.get("_total_params_raw", 0)
-            total_memory_bytes += submodule_info.get("_total_memory_bytes", 0)
+            total_params += submodule_info.get("total_params", 0)
+            total_memory += submodule_info.get("total_memory", 0)
 
         # Build module info (include hidden fields for accumulation)
         module_info = {
             "name": current_name,
             "type": module.__class__.__name__,
-            "total_params": format_number(total_params),
-            "total_memory": format_memory(total_memory_bytes),
-            "total_params_num": total_params,  # Hidden field for accumulation
-            "total_memory_bytes": total_memory_bytes,  # Hidden field for accumulation
-            "parameters": parameters,
-            "submodules": submodules,
+            "total_params": total_params,
+            "total_memory": total_memory,
+            "total_params_f": format_number(total_params),
+            "total_memory_f": format_memory(total_memory),
         }
 
+        if len(parameters) > 0:
+            module_info["parameters"] = parameters
+        if len(submodules) > 0:
+            module_info["submodules"] = submodules
         return module_info
 
     def log_model_info(self, output_path: str):
@@ -614,7 +635,7 @@ class GPTModel(LanguageModule):
         os.makedirs(output_path, exist_ok=True)
 
         # Build tree starting from model
-        model_info = self._build_model_info_tree(self, parent_name="gpt")
+        model_info = self.build_model_info_tree(self, parent_name="gpt")
 
         # Get vp_stage if available (VPP mode creates multiple model chunks)
         vp_stage = getattr(self, 'vp_stage', None)
