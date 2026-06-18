@@ -603,7 +603,7 @@ class PipelineOffloadManager:
         import json
         import os
 
-        log_path = FineGrainedActivationOffloadingInterface.getlog_model_info_path()
+        log_path = FineGrainedActivationOffloadingInterface.get_log_model_info_path()
 
         # Ensure directory exists
         if not os.path.exists(log_path):
@@ -1290,12 +1290,12 @@ class FineGrainedActivationOffloadingInterface:
             PipelineOffloadManager.get_instance().__exit__()
 
     @staticmethod
-    def setlog_model_info_path(path: str):
+    def set_log_model_info_path(path: str):
         """Set the path for logging offload information."""
         FineGrainedActivationOffloadingInterface.log_model_info_path = path
 
     @staticmethod
-    def getlog_model_info_path() -> str:
+    def get_log_model_info_path() -> str:
         """Get the path for logging offload information."""
         return FineGrainedActivationOffloadingInterface.log_model_info_path
 
