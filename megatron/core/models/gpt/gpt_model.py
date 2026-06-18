@@ -270,7 +270,7 @@ class GPTModel(LanguageModule):
         set_nvtx_name(self, "gpt")
 
         # Flag for first iteration parameter logging
-        self._logged_model_parameters = False
+        self._logged_model_info = False
 
         # self.enable_nvtx_profiling()
 
@@ -600,7 +600,7 @@ class GPTModel(LanguageModule):
 
         return module_info
 
-    def log_model_parameters_info(self, output_path: str):
+    def log_model_info(self, output_path: str):
         """Log model parameter information to a JSON file.
 
         Args:
@@ -674,9 +674,9 @@ class GPTModel(LanguageModule):
             self.preprocess_for_fine_grained_offloading()
 
         # Log model parameters on first iteration if enabled
-        if self.config.log_model_parameters and not self._logged_model_parameters:
-            self.log_model_parameters_info(self.config.log_model_info_path)
-            self._logged_model_parameters = True
+        if self.config.log_model_info and not self._logged_model_info:
+            self.log_model_info(self.config.log_model_info_path)
+            self._logged_model_info = True
 
         inference_context = deprecate_inference_params(inference_context, inference_params)
 
