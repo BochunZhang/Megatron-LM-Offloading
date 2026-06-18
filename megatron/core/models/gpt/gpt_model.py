@@ -549,7 +549,7 @@ class GPTModel(LanguageModule):
                 unit_idx += 1
             return f"{value:.2f}{units[unit_idx]}"
 
-        def tensor_info(tensor: torch.nn.Tensor) -> Dict:
+        def tensor_info(tensor: torch.Tensor) -> Dict:
             """Get information about a tensor."""
             if tensor is None:
                 return None
