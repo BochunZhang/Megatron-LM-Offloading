@@ -546,8 +546,12 @@ echo "train.sh: Starting training with config:"
 echo "  TP=$TP, PP=$PP, EP=$EP, DP=$DP"
 echo "  MBS=$MICRO_BATCH_SIZE, GBS=$GLOBAL_BATCH_SIZE"
 echo "  Layers=$NUM_LAYER, Experts=$NUM_EXPERT, Seq=$SEQ_LEN"
-echo "  Dispatcher=$DISPATCHER, Graph=$ENABLE_GRAPH, Profile=$ENABLE_PROFILE"
-echo "  Offload: act=$OFFLOAD_ACTIVATION, weight=$OFFLOAD_WEIGHTS, optim=$OFFLOAD_OPTIMIZER, fine=$OFFLOAD_FINE_GRAINED"
+echo "  Dispatcher=$DISPATCHER, Graph=$ENABLE_GRAPH, Profile=$ENABLE_PROFILE, LogModel=$ENABLE_LOG_MODEL"
+if [ "$OFFLOAD_FINE_GRAINED" = true ] && [ ${#OFFLOAD_FINE_MODULES[@]} -gt 0 ]; then
+    echo "  Offload: act=$OFFLOAD_ACTIVATION, weight=$OFFLOAD_WEIGHTS, optim=$OFFLOAD_OPTIMIZER, fine=$OFFLOAD_FINE_GRAINED, modules=[${OFFLOAD_FINE_MODULES[*]}]"
+else
+    echo "  Offload: act=$OFFLOAD_ACTIVATION, weight=$OFFLOAD_WEIGHTS, optim=$OFFLOAD_OPTIMIZER, fine=$OFFLOAD_FINE_GRAINED"
+fi
 
 numarun \
     ${NSYS_ARGS[@]} \
