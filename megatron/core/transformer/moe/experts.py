@@ -756,9 +756,12 @@ class TEGroupedMLP(MegatronModule):
         nvtx_range_pop(suffix="activation")
 
         nvtx_range_push(suffix="linear_fc2")
-        # output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
-        with off_interface(True, bias_act_output, "expert_fc2") as bias_act_output:
-            output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
+        output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
+        # with off_interface(True, bias_act_output, "expert_fc2") as bias_act_output:
+        #     output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
+        # output = off_interface.group_commit(
+        #     output, name="expert_fc2", forced_released_tensors=[]
+        # )
         if self.activation_recompute:
             self.activation_checkpoint.discard_output_and_register_recompute(output)
         nvtx_range_pop(suffix="linear_fc2")
@@ -769,10 +772,6 @@ class TEGroupedMLP(MegatronModule):
             output = off_interface.group_commit(
                 output, name="moe_act", forced_released_tensors=[fc1_output]
             )
-
-        output = off_interface.group_commit(
-            output, name="expert_fc2", forced_released_tensors=[]
-        )
 
         nvtx_range_push(suffix="apply_bias")
         output = self._apply_bias(output, output_bias, tokens_per_expert, permuted_probs)
