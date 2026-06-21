@@ -952,11 +952,11 @@ class ChunkOffloadHandler:
                     if self.is_warmup:
                         group_to_offload.update_offload_info(tensor_on_device)
                         # ponytail: pass cpu_tensor (state[1]) for optional file saving
-                        group_to_offload.record_offload_info(tensor_on_device, offloaded=True, cpu_tensor=state[1])
+                        group_to_offload.record_offload_info(tensor_on_device, offloaded=True)
                     tensor_on_device.record_stream(self.d2h_stream)
                     group_to_offload.push_tensor(tensor_tag, state)
                 elif self.is_warmup:
-                    group_to_offload.record_offload_info(tensor_on_device, offloaded=False, cpu_tensor=None)
+                    group_to_offload.record_offload_info(tensor_on_device, offloaded=False)
             group_to_offload.record_offload_event(self.d2h_stream)
         self._groups_to_offload.pop()
         torch.cuda.nvtx.range_pop()
