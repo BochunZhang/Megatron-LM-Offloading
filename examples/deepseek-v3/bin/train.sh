@@ -463,6 +463,7 @@ if [ "$ENABLE_LOG_MODEL" = true ]; then
     )
 
     mkdir -p $LOGS_PATH/info
+    mkdir -p $LOGS_PATH/memory_snapshot
     mkdir -p $TENSORBOARD_PATH
 fi
 
