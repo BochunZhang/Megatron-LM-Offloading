@@ -343,7 +343,7 @@ class MLP(MegatronModule):
                     original_dtype = intermediate_parallel.dtype
                     intermediate_parallel = intermediate_parallel * per_token_scale.unsqueeze(-1)
                     intermediate_parallel = intermediate_parallel.to(original_dtype)
-                return intermediate_parallel
+            return intermediate_parallel
 
         nvtx_range_push(suffix="activation")
         with off_interface(True, fc1_output, "mlp_act") as fc1_output:
@@ -352,7 +352,7 @@ class MLP(MegatronModule):
 
         # [s, b, h]
         nvtx_range_push(suffix="linear_fc2")
-        with off_interface(True, bias_act_output, "mlp_act") as bias_act_output:
+        with off_interface(True, bias_act_output, "mlp_fc2") as bias_act_output:
             output, output_bias = self.linear_fc2(bias_act_output)
 
             if per_token_scale is not None and output_bias is not None:
