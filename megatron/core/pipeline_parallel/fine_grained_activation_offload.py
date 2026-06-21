@@ -334,6 +334,8 @@ class OffloadTensorGroup:
     A group of tensors to be offloaded together.
     """
 
+    _name_counter = {}
+
     def __init__(self, name):
         self._name = name
         self._tensors = {}
@@ -349,6 +351,12 @@ class OffloadTensorGroup:
             self.use_cpu_pool = False
         else:
             self.use_cpu_pool = True
+        
+        if name not in OffloadTensorGroup._name_counter:
+            OffloadTensorGroup._name_counter[name] = 0
+            self.offload_records = {}
+        self.index = OffloadTensorGroup._name_counter[name]
+        OffloadTensorGroup._name_counter[name] += 1
 
     def push_tensor(self, tag, tensor):
         """Push a tensor to the group."""
@@ -387,8 +395,8 @@ class OffloadTensorGroup:
             offloaded: True if tensor was actually offloaded, False otherwise
         """
         if not hasattr(self, 'offload_records'):
-            self.offload_records = []
-
+            return
+        
         record = {
             "id": hex(id(tensor)),
             "type": tensor.__class__.__name__,
@@ -401,14 +409,14 @@ class OffloadTensorGroup:
             "data_ptr": tensor.data_ptr(),
         }
 
-        # if getattr(tensor, "offloading_activation", None) is not False:
-        #     import os
-        #     base_path = FineGrainedActivationOffloadingInterface.get_log_model_info_path()
-        #     tensor_dir = os.path.join(base_path, "offload-tensor")
-        #     os.makedirs(tensor_dir, exist_ok=True)
-        #     file_name = f"{self._name}.{len(self.offload_records)}.pt"
-        #     file_path = os.path.join(tensor_dir, file_name)
-        #     torch.save(tensor, file_path)
+        if getattr(tensor, "offloading_activation", None) is not False:
+            import os
+            base_path = FineGrainedActivationOffloadingInterface.get_log_model_info_path()
+            tensor_dir = os.path.join(base_path, "offload-tensor")
+            os.makedirs(tensor_dir, exist_ok=True)
+            file_name = f"{self._name}.{len(self.offload_records)}.pt"
+            file_path = os.path.join(tensor_dir, file_name)
+            torch.save(tensor, file_path)
 
         self.offload_records.append(record)
 
