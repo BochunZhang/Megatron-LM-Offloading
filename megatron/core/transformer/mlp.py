@@ -265,7 +265,7 @@ class MLP(MegatronModule):
         fc1_output = off_interface.group_commit(
             fc1_output,
             name="mlp_fc1",
-            forced_released_tensors=[hidden_states],
+            forced_released_tensors=[],
         )
         nvtx_range_pop(suffix="linear_fc1")
 
@@ -366,7 +366,7 @@ class MLP(MegatronModule):
         nvtx_range_pop(suffix="linear_fc2")
 
         output = off_interface.group_commit(
-            output, name="mlp_act", forced_released_tensors=[fc1_output]
+            output, name="mlp_act", forced_released_tensors=[]
         )
 
         return output, output_bias 
