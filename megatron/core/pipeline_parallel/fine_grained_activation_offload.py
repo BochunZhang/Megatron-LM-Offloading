@@ -12,7 +12,7 @@ DEBUG_RANK = 0
 
 from megatron.core.fp8_utils import is_mxfp8tensor, is_float8tensor
 from megatron.core.transformer.cuda_graphs import is_graph_capturing
-
+from megatron.core.parallel_state import get_data_parallel_rank
 
 def debug_rank(message):
     """Print debug message for a specific rank when DEBUG is enabled."""
@@ -351,12 +351,13 @@ class OffloadTensorGroup:
             self.use_cpu_pool = False
         else:
             self.use_cpu_pool = True
-        
-        if name not in OffloadTensorGroup._name_counter:
-            OffloadTensorGroup._name_counter[name] = 0
-            self.offload_records = {}
-        self.index = OffloadTensorGroup._name_counter[name]
-        OffloadTensorGroup._name_counter[name] += 1
+
+        if get_data_parallel_rank() == 0:            
+            if name not in OffloadTensorGroup._name_counter:
+                OffloadTensorGroup._name_counter[name] = 0
+                self.offload_records = {}
+            self.index = OffloadTensorGroup._name_counter[name]
+            OffloadTensorGroup._name_counter[name] += 1
 
     def push_tensor(self, tag, tensor):
         """Push a tensor to the group."""
