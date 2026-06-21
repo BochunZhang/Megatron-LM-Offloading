@@ -260,7 +260,7 @@ class MLP(MegatronModule):
         with off_interface(
             True, hidden_states, "mlp_fc1"
         ) as hidden_states:
-            intermediate_parallel, bias_parallel = self.linear_fc1(hidden_states)
+            fc1_output, bias_parallel = self.linear_fc1(hidden_states)
 
         fc1_output = off_interface.group_commit(
             fc1_output,
