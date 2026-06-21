@@ -617,6 +617,7 @@ class GPTModel(LanguageModule):
         module_info = {
             "name": current_name,
             "type": module.__class__.__name__,
+            "module": module.__class__.__module__,
             "total_params": total_params,
             "total_memory": total_memory,
             "total_params_f": format_number(total_params),

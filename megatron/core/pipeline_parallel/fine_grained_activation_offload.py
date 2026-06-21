@@ -389,18 +389,28 @@ class OffloadTensorGroup:
         if not hasattr(self, 'offload_records'):
             self.offload_records = []
 
-        self.offload_records.append(
-            {
-                "id": hex(id(tensor)),
-                "type": tensor.__class__.__name__,
-                "shape": list(tensor.shape),
-                "dtype": str(tensor.dtype),
-                "params": tensor.numel(),                    # 元素数量
-                "memory": tensor.numel() * tensor.element_size(),
-                "offload": offloaded,
-                "offloading_activation": getattr(tensor, "offloading_activation", None)
-            }
-        )
+        record = {
+            "id": hex(id(tensor)),
+            "type": tensor.__class__.__name__,
+            "shape": list(tensor.shape),
+            "dtype": str(tensor.dtype),
+            "params": tensor.numel(),
+            "memory": tensor.numel() * tensor.element_size(),
+            "offload": offloaded,
+            "offloading_activation": getattr(tensor, "offloading_activation", None),
+            "data_ptr": tensor.data_ptr(),
+        }
+
+        # if getattr(tensor, "offloading_activation", None) is not False:
+        #     import os
+        #     base_path = FineGrainedActivationOffloadingInterface.get_log_model_info_path()
+        #     tensor_dir = os.path.join(base_path, "offload-tensor")
+        #     os.makedirs(tensor_dir, exist_ok=True)
+        #     file_name = f"{self._name}.{len(self.offload_records)}.pt"
+        #     file_path = os.path.join(tensor_dir, file_name)
+        #     torch.save(tensor, file_path)
+
+        self.offload_records.append(record)
 
 
 
@@ -621,7 +631,7 @@ class PipelineOffloadManager:
         # Write JSON file
         assert torch.distributed.is_initialized()
         rank = torch.distributed.get_rank()
-        output_file = os.path.join(log_path, f"fine_grained_offload.rank{rank}.json")
+        output_file = os.path.join(log_path, f"fine_grained_offload.rank[{rank}].json")
         with open(output_file, 'w') as f:
             json.dump(records_by_group, f, indent=2)
 
@@ -941,11 +951,12 @@ class ChunkOffloadHandler:
                     )
                     if self.is_warmup:
                         group_to_offload.update_offload_info(tensor_on_device)
-                        group_to_offload.record_offload_info(tensor_on_device, offloaded=True)
+                        # ponytail: pass cpu_tensor (state[1]) for optional file saving
+                        group_to_offload.record_offload_info(tensor_on_device, offloaded=True, cpu_tensor=state[1])
                     tensor_on_device.record_stream(self.d2h_stream)
                     group_to_offload.push_tensor(tensor_tag, state)
                 elif self.is_warmup:
-                    group_to_offload.record_offload_info(tensor_on_device, offloaded=False)
+                    group_to_offload.record_offload_info(tensor_on_device, offloaded=False, cpu_tensor=None)
             group_to_offload.record_offload_event(self.d2h_stream)
         self._groups_to_offload.pop()
         torch.cuda.nvtx.range_pop()
