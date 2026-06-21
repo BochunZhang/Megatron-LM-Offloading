@@ -355,7 +355,7 @@ class OffloadTensorGroup:
         if get_data_parallel_rank() == 0:            
             if name not in OffloadTensorGroup._name_counter:
                 OffloadTensorGroup._name_counter[name] = 0
-                self.offload_records = {}
+                self.offload_records = []
             self.index = OffloadTensorGroup._name_counter[name]
             OffloadTensorGroup._name_counter[name] += 1
 
