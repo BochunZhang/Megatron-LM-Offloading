@@ -632,19 +632,19 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             # self attention module.
             hidden_states = attention_output_with_bias[0]
         else:
-            # with self.bias_dropout_add_exec_handler():
-            #     hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
-            #         attention_output_with_bias, residual, self.hidden_dropout
-            #     )
+            with self.bias_dropout_add_exec_handler():
+                hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
+                    attention_output_with_bias, residual, self.hidden_dropout
+                )
 
-            with off_interface(True, attention_output_with_bias, "self_attn_bda") as attention_output_with_bias:
-                with self.bias_dropout_add_exec_handler():
-                    hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
-                        attention_output_with_bias, residual, self.hidden_dropout
-                    )
-            hidden_states = off_interface.group_commit(
-                hidden_states, name="self_attn_bda", forced_released_tensors=[]
-            )
+            # with off_interface(True, attention_output_with_bias, "self_attn_bda") as attention_output_with_bias:
+            #     with self.bias_dropout_add_exec_handler():
+            #         hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(
+            #             attention_output_with_bias, residual, self.hidden_dropout
+            #         )
+            # hidden_states = off_interface.group_commit(
+            #     hidden_states, name="self_attn_bda", forced_released_tensors=[]
+            # )
         nvtx_range_pop(suffix="self_attn_bda")
 
         # Delay the offload of the attention norm until after the self_attn_bda has been computed

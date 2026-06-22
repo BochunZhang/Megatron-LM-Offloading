@@ -670,7 +670,7 @@ class TEGroupedMLP(MegatronModule):
             # Probs already applied, so reset to 1.
             permuted_probs = torch.ones_like(permuted_probs)
 
-        nvtx_range_push(suffix="linear_fc1")
+        nvtx_range_push(suffix="experts.linear_fc1")
         with off_interface(
             self.offload_expert_fc1, permuted_local_hidden_states, "expert_fc1"
         ) as permuted_local_hidden_states:
@@ -683,7 +683,7 @@ class TEGroupedMLP(MegatronModule):
                 name="expert_fc1",
                 forced_released_tensors=[permuted_local_hidden_states],
             )
-        nvtx_range_pop(suffix="linear_fc1")
+        nvtx_range_pop(suffix="experts.linear_fc1")
 
         def bias_act_func(intermediate_parallel, bias_parallel, permuted_probs):
             if self.config.use_te_activation_func:
@@ -743,7 +743,7 @@ class TEGroupedMLP(MegatronModule):
                 intermediate_parallel = intermediate_parallel.to(original_dtype)
             return intermediate_parallel
 
-        nvtx_range_push(suffix="activation")
+        nvtx_range_push(suffix="experts.activation")
         if self.activation_recompute:
             self.activation_checkpoint = tensor_parallel.CheckpointWithoutOutput()
             with off_interface(self.offload_moe_act, fc1_output, "moe_act") as fc1_output:
@@ -753,18 +753,18 @@ class TEGroupedMLP(MegatronModule):
         else:
             with off_interface(self.offload_moe_act, fc1_output, "moe_act") as fc1_output:
                 bias_act_output = bias_act_func(fc1_output, bias_parallel, permuted_probs)
-        nvtx_range_pop(suffix="activation")
+        nvtx_range_pop(suffix="experts.activation")
 
-        nvtx_range_push(suffix="linear_fc2")
-        # output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
-        with off_interface(True, bias_act_output, "expert_fc2") as bias_act_output:
-            output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
-        output = off_interface.group_commit(
-            output, name="expert_fc2", forced_released_tensors=[]
-        )
+        nvtx_range_push(suffix="experts.linear_fc2")
+        output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
+        # with off_interface(True, bias_act_output, "expert_fc2") as bias_act_output:
+        #     output, output_bias = self.linear_fc2(bias_act_output, tokens_per_expert)
+        # output = off_interface.group_commit(
+        #     output, name="expert_fc2", forced_released_tensors=[]
+        # )
         if self.activation_recompute:
             self.activation_checkpoint.discard_output_and_register_recompute(output)
-        nvtx_range_pop(suffix="linear_fc2")
+        nvtx_range_pop(suffix="experts.linear_fc2")
 
         # Delay the offload of the moe act until after the linear_fc2 has been computed
         # to make sure the fc1_output is reloaded to GPU before recomputing moe_act.
@@ -773,9 +773,9 @@ class TEGroupedMLP(MegatronModule):
                 output, name="moe_act", forced_released_tensors=[fc1_output]
             )
 
-        nvtx_range_push(suffix="apply_bias")
+        nvtx_range_push(suffix="experts.apply_bias")
         output = self._apply_bias(output, output_bias, tokens_per_expert, permuted_probs)
-        nvtx_range_pop(suffix="apply_bias")
+        nvtx_range_pop(suffix="experts.apply_bias")
 
         # upad and concat the output
         if self.config.fp8 or self.config.fp4:

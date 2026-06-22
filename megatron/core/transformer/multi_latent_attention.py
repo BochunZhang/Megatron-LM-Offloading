@@ -786,6 +786,7 @@ class MLASelfAttention(MultiLatentAttention):
             if self.config.apply_rope_fusion:
                 cp_rank = self.pg_collection.cp.rank()
                 cp_size = self.pg_collection.cp.size()
+                nvtx_range_push(suffix="fused_apply_mla_rope_for_q")
                 query = fused_apply_mla_rope_for_q(
                     q,
                     rotary_pos_cos,
@@ -796,6 +797,8 @@ class MLASelfAttention(MultiLatentAttention):
                     cp_rank,
                     cp_size,
                 )
+                nvtx_range_pop(suffix="fused_apply_mla_rope_for_q")
+                nvtx_range_push(suffix="fused_apply_mla_rope_for_kv")
                 key, value = fused_apply_mla_rope_for_kv(
                     kv,
                     k_pos_emb,
@@ -808,6 +811,7 @@ class MLASelfAttention(MultiLatentAttention):
                     cp_rank,
                     cp_size,
                 )
+                nvtx_range_pop(suffix="fused_apply_mla_rope_for_kv")
             else:
                 q_len = q.size()[0]
                 if inference_context is not None:
