@@ -246,18 +246,6 @@ class MoELayer(BaseMoELayer):
         self.cudagraph_tensor_store = MoECudaGraphTensorStore()
         self.fwd_execution_map = ["route", "expert_compute", "postprocess"]
 
-    @maybe_skip_or_early_return_by_cudagraph("route")
-    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
-        """Compute token routing for preprocessing.
-
-        This method uses the router to determine which experts to send each token to,
-        producing routing probabilities and a mapping.
-        """
-        nvtx_range_push(suffix="router")
-        probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
-        nvtx_range_pop(suffix="router")
-        return probs, routing_map
-    
     # @maybe_skip_or_early_return_by_cudagraph("route")
     # def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
     #     """Compute token routing for preprocessing.
@@ -265,17 +253,29 @@ class MoELayer(BaseMoELayer):
     #     This method uses the router to determine which experts to send each token to,
     #     producing routing probabilities and a mapping.
     #     """
-    #     from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
-    #         FineGrainedActivationOffloadingInterface as off_interface,
-    #     )
     #     nvtx_range_push(suffix="router")
-    #     with off_interface(True, hidden_states, "topk_router") as hidden_states:
-    #         probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
-    #     probs = off_interface.group_commit(
-    #         probs, name="topk_router", forced_released_tensors=[]
-    #     )
+    #     probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
     #     nvtx_range_pop(suffix="router")
     #     return probs, routing_map
+    
+    @maybe_skip_or_early_return_by_cudagraph("route")
+    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+        """Compute token routing for preprocessing.
+
+        This method uses the router to determine which experts to send each token to,
+        producing routing probabilities and a mapping.
+        """
+        from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
+            FineGrainedActivationOffloadingInterface as off_interface,
+        )
+        nvtx_range_push(suffix="router")
+        with off_interface(True, hidden_states, "topk_router") as hidden_states:
+            probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)
+        probs = off_interface.group_commit(
+            probs, name="topk_router", forced_released_tensors=[]
+        )
+        nvtx_range_pop(suffix="router")
+        return probs, routing_map
 
     @maybe_skip_or_early_return_by_cudagraph("preprocess")
     def preprocess(
