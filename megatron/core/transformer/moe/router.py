@@ -572,93 +572,93 @@ class TopKRouter(Router):
                     routing_map = routing_map & (~padding_mask)
                 self.local_tokens_per_expert += routing_map.sum(dim=0)
 
-    # def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
-    #     """Top-k routing function
+    def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+        """Top-k routing function
 
-    #     Args:
-    #         logits (torch.Tensor): Logits tensor after gating.
-    #         padding_mask (torch.Tensor, optional): Boolean mask indicating non-padding tokens.
-    #                                                Shape [seq_length, bsz]. True for valid tokens,
-    #                                                False for padding tokens. Defaults to None.
+        Args:
+            logits (torch.Tensor): Logits tensor after gating.
+            padding_mask (torch.Tensor, optional): Boolean mask indicating non-padding tokens.
+                                                   Shape [seq_length, bsz]. True for valid tokens,
+                                                   False for padding tokens. Defaults to None.
 
-    #     Returns:
-    #         probs (torch.Tensor): The probabilities of token to experts assignment.
-    #         routing_map (torch.Tensor): The mapping of token to experts assignment,
-    #             with shape [num_tokens, num_experts].
-    #     """
-    #     seq_length, bsz = logits.shape[:2]
-    #     logits = logits.view(-1, self.config.num_moe_experts)
+        Returns:
+            probs (torch.Tensor): The probabilities of token to experts assignment.
+            routing_map (torch.Tensor): The mapping of token to experts assignment,
+                with shape [num_tokens, num_experts].
+        """
+        seq_length, bsz = logits.shape[:2]
+        logits = logits.view(-1, self.config.num_moe_experts)
 
-    #     # Flatten padding_mask to [num_tokens] if provided
-    #     if padding_mask is not None:
-    #         padding_mask = padding_mask.reshape(-1)
+        # Flatten padding_mask to [num_tokens] if provided
+        if padding_mask is not None:
+            padding_mask = padding_mask.reshape(-1)
 
-    #     # Apply Z-Loss
-    #     logits = self.apply_z_loss(logits, padding_mask=padding_mask)
+        # Apply Z-Loss
+        logits = self.apply_z_loss(logits, padding_mask=padding_mask)
 
-    #     # Calculate probs and routing_map for token dispatching
-    #     if self.routing_type == "sinkhorn":
-    #         probs, routing_map = self.sinkhorn_load_balancing(logits)
-    #     else:
-    #         probs, routing_map = topk_routing_with_score_function(
-    #             logits,
-    #             self.topk,
-    #             use_pre_softmax=self.config.moe_router_pre_softmax,
-    #             num_groups=self.config.moe_router_num_groups,
-    #             group_topk=self.config.moe_router_group_topk,
-    #             scaling_factor=self.config.moe_router_topk_scaling_factor,
-    #             score_function=self.score_function,
-    #             expert_bias=self.expert_bias,
-    #             fused=self.config.moe_router_fusion,
-    #             router_replay=self.router_replay,
-    #         )
+        # Calculate probs and routing_map for token dispatching
+        if self.routing_type == "sinkhorn":
+            probs, routing_map = self.sinkhorn_load_balancing(logits)
+        else:
+            probs, routing_map = topk_routing_with_score_function(
+                logits,
+                self.topk,
+                use_pre_softmax=self.config.moe_router_pre_softmax,
+                num_groups=self.config.moe_router_num_groups,
+                group_topk=self.config.moe_router_group_topk,
+                scaling_factor=self.config.moe_router_topk_scaling_factor,
+                score_function=self.score_function,
+                expert_bias=self.expert_bias,
+                fused=self.config.moe_router_fusion,
+                router_replay=self.router_replay,
+            )
 
-    #     # Apply token dropping to probs and routing_map.
-    #     if self.config.moe_expert_capacity_factor is not None:
-    #         probs, routing_map = apply_router_token_dropping(
-    #             probs,
-    #             routing_map,
-    #             router_topk=self.topk,
-    #             capacity_factor=self.config.moe_expert_capacity_factor,
-    #             drop_policy=self.config.moe_token_drop_policy,
-    #             pad_to_capacity=self.config.moe_pad_expert_input_to_capacity,
-    #         )
+        # Apply token dropping to probs and routing_map.
+        if self.config.moe_expert_capacity_factor is not None:
+            probs, routing_map = apply_router_token_dropping(
+                probs,
+                routing_map,
+                router_topk=self.topk,
+                capacity_factor=self.config.moe_expert_capacity_factor,
+                drop_policy=self.config.moe_token_drop_policy,
+                pad_to_capacity=self.config.moe_pad_expert_input_to_capacity,
+            )
 
-    #     # Apply each aux loss type and attach aux loss autograd function to probs
-    #     if self.training and torch.is_grad_enabled() and self.is_aux_loss_enabled():
-    #         # Calculate scores and routing_map for aux loss
-    #         routing_map_for_aux_loss, scores_for_aux_loss = compute_routing_scores_for_aux_loss(
-    #             logits,
-    #             self.topk,
-    #             self.score_function,
-    #             fused=self.config.moe_router_fusion,
-    #             padding_mask=padding_mask,
-    #         )
-    #         probs = self._apply_aux_loss(
-    #             probs,
-    #             scores_for_aux_loss,
-    #             routing_map_for_aux_loss,
-    #             with_padding_mask=padding_mask is not None,
-    #         )
-    #         probs = self._apply_seq_aux_loss(
-    #             probs,
-    #             scores_for_aux_loss,
-    #             routing_map_for_aux_loss,
-    #             seq_length,
-    #             bsz,
-    #             with_padding_mask=padding_mask is not None,
-    #         )
-    #         probs = self._apply_global_aux_loss(
-    #             probs,
-    #             scores_for_aux_loss,
-    #             routing_map_for_aux_loss,
-    #             with_padding_mask=padding_mask is not None,
-    #         )
+        # Apply each aux loss type and attach aux loss autograd function to probs
+        if self.training and torch.is_grad_enabled() and self.is_aux_loss_enabled():
+            # Calculate scores and routing_map for aux loss
+            routing_map_for_aux_loss, scores_for_aux_loss = compute_routing_scores_for_aux_loss(
+                logits,
+                self.topk,
+                self.score_function,
+                fused=self.config.moe_router_fusion,
+                padding_mask=padding_mask,
+            )
+            probs = self._apply_aux_loss(
+                probs,
+                scores_for_aux_loss,
+                routing_map_for_aux_loss,
+                with_padding_mask=padding_mask is not None,
+            )
+            probs = self._apply_seq_aux_loss(
+                probs,
+                scores_for_aux_loss,
+                routing_map_for_aux_loss,
+                seq_length,
+                bsz,
+                with_padding_mask=padding_mask is not None,
+            )
+            probs = self._apply_global_aux_loss(
+                probs,
+                scores_for_aux_loss,
+                routing_map_for_aux_loss,
+                with_padding_mask=padding_mask is not None,
+            )
 
-    #     # Optionally apply expert bias
-    #     self._apply_expert_bias(routing_map, padding_mask=padding_mask)
+        # Optionally apply expert bias
+        self._apply_expert_bias(routing_map, padding_mask=padding_mask)
 
-    #     return probs, routing_map
+        return probs, routing_map
 
     def reset_global_aux_loss_tracker(self):
         """Reset the global aux loss tracker."""
@@ -706,115 +706,115 @@ class TopKRouter(Router):
         self._maintain_float32_expert_bias()  # switch to float32 before saving
         return super()._save_to_state_dict(*args, **kwargs)
 
-    def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
-        """Top-k routing function
+    # def routing(self, logits: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):
+    #     """Top-k routing function
 
-        Args:
-            logits (torch.Tensor): Logits tensor after gating.
-            padding_mask (torch.Tensor, optional): Boolean mask indicating non-padding tokens.
-                                                   Shape [seq_length, bsz]. True for valid tokens,
-                                                   False for padding tokens. Defaults to None.
+    #     Args:
+    #         logits (torch.Tensor): Logits tensor after gating.
+    #         padding_mask (torch.Tensor, optional): Boolean mask indicating non-padding tokens.
+    #                                                Shape [seq_length, bsz]. True for valid tokens,
+    #                                                False for padding tokens. Defaults to None.
 
-        Returns:
-            probs (torch.Tensor): The probabilities of token to experts assignment.
-            routing_map (torch.Tensor): The mapping of token to experts assignment,
-                with shape [num_tokens, num_experts].
-        """
-        seq_length, bsz = logits.shape[:2]
-        logits = logits.view(-1, self.config.num_moe_experts)
+    #     Returns:
+    #         probs (torch.Tensor): The probabilities of token to experts assignment.
+    #         routing_map (torch.Tensor): The mapping of token to experts assignment,
+    #             with shape [num_tokens, num_experts].
+    #     """
+    #     seq_length, bsz = logits.shape[:2]
+    #     logits = logits.view(-1, self.config.num_moe_experts)
 
-        # Flatten padding_mask to [num_tokens] if provided
-        if padding_mask is not None:
-            padding_mask = padding_mask.reshape(-1)
+    #     # Flatten padding_mask to [num_tokens] if provided
+    #     if padding_mask is not None:
+    #         padding_mask = padding_mask.reshape(-1)
 
-        from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
-            FineGrainedActivationOffloadingInterface as off_interface,
-        )
+    #     from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
+    #         FineGrainedActivationOffloadingInterface as off_interface,
+    #     )
 
-        # Apply Z-Loss
-        with off_interface(True, logits, "apply_z_loss") as logits:
-            logits = self.apply_z_loss(logits, padding_mask=padding_mask)
-        logits=off_interface.group_commit(logits, "apply_z_loss", forced_released_tensors=[])
+    #     # Apply Z-Loss
+    #     with off_interface(True, logits, "apply_z_loss") as logits:
+    #         logits = self.apply_z_loss(logits, padding_mask=padding_mask)
+    #     logits=off_interface.group_commit(logits, "apply_z_loss", forced_released_tensors=[])
 
-        # Calculate probs and routing_map for token dispatching
-        if self.routing_type == "sinkhorn":
-            with off_interface(True, logits, "sinkhorn_load_balancing") as logits:
-                probs, routing_map = self.sinkhorn_load_balancing(logits)
-            probs=off_interface.group_commit(probs, "sinkhorn_load_balancing", forced_released_tensors=[])
-        else:
-            with off_interface(True, logits, "topk_routing_with_score_function") as logits:
-                probs, routing_map = topk_routing_with_score_function(
-                    logits,
-                    self.topk,
-                    use_pre_softmax=self.config.moe_router_pre_softmax,
-                    num_groups=self.config.moe_router_num_groups,
-                    group_topk=self.config.moe_router_group_topk,
-                    scaling_factor=self.config.moe_router_topk_scaling_factor,
-                    score_function=self.score_function,
-                    expert_bias=self.expert_bias,
-                    fused=self.config.moe_router_fusion,
-                    router_replay=self.router_replay,
-                )
-            probs=off_interface.group_commit(probs, "topk_routing_with_score_function", forced_released_tensors=[])
+    #     # Calculate probs and routing_map for token dispatching
+    #     if self.routing_type == "sinkhorn":
+    #         with off_interface(True, logits, "sinkhorn_load_balancing") as logits:
+    #             probs, routing_map = self.sinkhorn_load_balancing(logits)
+    #         probs=off_interface.group_commit(probs, "sinkhorn_load_balancing", forced_released_tensors=[])
+    #     else:
+    #         with off_interface(True, logits, "topk_routing_with_score_function") as logits:
+    #             probs, routing_map = topk_routing_with_score_function(
+    #                 logits,
+    #                 self.topk,
+    #                 use_pre_softmax=self.config.moe_router_pre_softmax,
+    #                 num_groups=self.config.moe_router_num_groups,
+    #                 group_topk=self.config.moe_router_group_topk,
+    #                 scaling_factor=self.config.moe_router_topk_scaling_factor,
+    #                 score_function=self.score_function,
+    #                 expert_bias=self.expert_bias,
+    #                 fused=self.config.moe_router_fusion,
+    #                 router_replay=self.router_replay,
+    #             )
+    #         probs=off_interface.group_commit(probs, "topk_routing_with_score_function", forced_released_tensors=[])
 
-        # Apply token dropping to probs and routing_map.
-        if self.config.moe_expert_capacity_factor is not None:
-            with off_interface(True, probs, "apply_router_token_dropping") as probs:
-                probs, routing_map = apply_router_token_dropping(
-                    probs,
-                    routing_map,
-                    router_topk=self.topk,
-                    capacity_factor=self.config.moe_expert_capacity_factor,
-                    drop_policy=self.config.moe_token_drop_policy,
-                    pad_to_capacity=self.config.moe_pad_expert_input_to_capacity,
-                )
-            probs=off_interface.group_commit(probs, "apply_router_token_dropping", forced_released_tensors=[])
+    #     # Apply token dropping to probs and routing_map.
+    #     if self.config.moe_expert_capacity_factor is not None:
+    #         with off_interface(True, probs, "apply_router_token_dropping") as probs:
+    #             probs, routing_map = apply_router_token_dropping(
+    #                 probs,
+    #                 routing_map,
+    #                 router_topk=self.topk,
+    #                 capacity_factor=self.config.moe_expert_capacity_factor,
+    #                 drop_policy=self.config.moe_token_drop_policy,
+    #                 pad_to_capacity=self.config.moe_pad_expert_input_to_capacity,
+    #             )
+    #         probs=off_interface.group_commit(probs, "apply_router_token_dropping", forced_released_tensors=[])
 
-        # Apply each aux loss type and attach aux loss autograd function to probs
-        if self.training and torch.is_grad_enabled() and self.is_aux_loss_enabled():
-            # Calculate scores and routing_map for aux loss
-            with off_interface(True, logits, "compute_routing_scores_for_aux_loss") as logits:
-                routing_map_for_aux_loss, scores_for_aux_loss = compute_routing_scores_for_aux_loss(
-                    logits,
-                    self.topk,
-                    self.score_function,
-                    fused=self.config.moe_router_fusion,
-                    padding_mask=padding_mask,
-                )
-            routing_map_for_aux_loss = off_interface.group_commit(
-                routing_map_for_aux_loss, "compute_routing_scores_for_aux_loss", forced_released_tensors=[]
-            )
+    #     # Apply each aux loss type and attach aux loss autograd function to probs
+    #     if self.training and torch.is_grad_enabled() and self.is_aux_loss_enabled():
+    #         # Calculate scores and routing_map for aux loss
+    #         with off_interface(True, logits, "compute_routing_scores_for_aux_loss") as logits:
+    #             routing_map_for_aux_loss, scores_for_aux_loss = compute_routing_scores_for_aux_loss(
+    #                 logits,
+    #                 self.topk,
+    #                 self.score_function,
+    #                 fused=self.config.moe_router_fusion,
+    #                 padding_mask=padding_mask,
+    #             )
+    #         routing_map_for_aux_loss = off_interface.group_commit(
+    #             routing_map_for_aux_loss, "compute_routing_scores_for_aux_loss", forced_released_tensors=[]
+    #         )
 
-            with off_interface(True, probs, "apply_aux_loss") as probs:
-                probs = self._apply_aux_loss(
-                    probs,
-                    scores_for_aux_loss,
-                    routing_map_for_aux_loss,
-                    with_padding_mask=padding_mask is not None,
-                )
-            probs = off_interface.group_commit(probs, "apply_aux_loss", forced_released_tensors=[])
+    #         with off_interface(True, probs, "apply_aux_loss") as probs:
+    #             probs = self._apply_aux_loss(
+    #                 probs,
+    #                 scores_for_aux_loss,
+    #                 routing_map_for_aux_loss,
+    #                 with_padding_mask=padding_mask is not None,
+    #             )
+    #         probs = off_interface.group_commit(probs, "apply_aux_loss", forced_released_tensors=[])
 
-            with off_interface(True, probs, "apply_seq_aux_loss") as probs:
-                probs = self._apply_seq_aux_loss(
-                    probs,
-                    scores_for_aux_loss,
-                    routing_map_for_aux_loss,
-                    seq_length,
-                    bsz,
-                    with_padding_mask=padding_mask is not None,
-                )
-            probs = off_interface.group_commit(probs, "apply_seq_aux_loss", forced_released_tensors=[])
+    #         with off_interface(True, probs, "apply_seq_aux_loss") as probs:
+    #             probs = self._apply_seq_aux_loss(
+    #                 probs,
+    #                 scores_for_aux_loss,
+    #                 routing_map_for_aux_loss,
+    #                 seq_length,
+    #                 bsz,
+    #                 with_padding_mask=padding_mask is not None,
+    #             )
+    #         probs = off_interface.group_commit(probs, "apply_seq_aux_loss", forced_released_tensors=[])
 
-            with off_interface(True, probs, "apply_global_aux_loss") as probs:
-                probs = self._apply_global_aux_loss(
-                    probs,
-                    scores_for_aux_loss,
-                    routing_map_for_aux_loss,
-                with_padding_mask=padding_mask is not None,
-                )
-            probs = off_interface.group_commit(probs, "apply_global_aux_loss", forced_released_tensors=[])
+    #         with off_interface(True, probs, "apply_global_aux_loss") as probs:
+    #             probs = self._apply_global_aux_loss(
+    #                 probs,
+    #                 scores_for_aux_loss,
+    #                 routing_map_for_aux_loss,
+    #             with_padding_mask=padding_mask is not None,
+    #             )
+    #         probs = off_interface.group_commit(probs, "apply_global_aux_loss", forced_released_tensors=[])
 
-        # Optionally apply expert bias
-        self._apply_expert_bias(routing_map, padding_mask=padding_mask)
+    #     # Optionally apply expert bias
+    #     self._apply_expert_bias(routing_map, padding_mask=padding_mask)
 
-        return probs, routing_map
+    #     return probs, routing_map
