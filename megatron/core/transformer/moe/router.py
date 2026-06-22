@@ -122,12 +122,7 @@ class Router(ABC, MegatronModule):
         elif self.config.moe_router_dtype == 'fp64':
             router_dtype = torch.float64
         
-        from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
-            FineGrainedActivationOffloadingInterface as off_interface,
-        )
-        with off_interface(True, input, "router_gating_linear") as input:
-            logits = router_gating_linear(input, self.weight, self.bias, router_dtype)
-        logits=off_interface.group_commit(logits, "router_gating_linear", forced_released_tensors=[])
+        logits = router_gating_linear(input, self.weight, self.bias, router_dtype)
         return logits
 
     @abstractmethod
@@ -684,13 +679,7 @@ class TopKRouter(Router):
 
         if self.config.moe_router_force_load_balancing:
             # Apply force load balancing with random logits for benchmark
-            # logits = apply_random_logits(logits)
-            from megatron.core.pipeline_parallel.fine_grained_activation_offload import (
-                FineGrainedActivationOffloadingInterface as off_interface,
-            )
-            with off_interface(True, logits, "apply_random_logits") as logits:
-                logits = apply_random_logits(logits)
-            logits=off_interface.group_commit(logits, "apply_random_logits", forced_released_tensors=[])
+            logits = apply_random_logits(logits)
 
         probs, routing_map = self.routing(logits, padding_mask=padding_mask)
 

@@ -966,7 +966,7 @@ class ChunkOffloadHandler:
                     group_to_offload.push_tensor(tensor_tag, state)
                 elif self.is_warmup:
                     group_to_offload.record_offload_info(tensor_on_device, offloaded=False)
-            group_to_offload.record_offload_event(self.d2h_stream)
+            group_to_offload.record_offload_event(self.d2h_stream)      # offload stream 完成后标记 offload_event 
         self._groups_to_offload.pop()
         torch.cuda.nvtx.range_pop()
 
@@ -986,14 +986,14 @@ class ChunkOffloadHandler:
         with torch.cuda.stream(self.h2d_stream):
             # Wait for offload to complete before reloading
             if not is_graph_capturing():
-                group_to_reload.wait_offload_event(self.h2d_stream)
+                group_to_reload.wait_offload_event(self.h2d_stream)     # 阻塞 reload stream, 等待当前 group 在 d2h stream 上的 offload_event 完成后执行
             for tensor_tag, state in group_to_reload._tensors.items():
                 # Only reload if tensor was offloaded (stored as tuple)
                 if isinstance(state, tuple):
                     recovered_tensor = self.reload(state)
                     # debug_rank(f"----recovered_tensor {recovered_tensor.shape}")
                     group_to_reload.push_tensor(tensor_tag, recovered_tensor)
-            group_to_reload.record_reload_event(self.h2d_stream)
+            group_to_reload.record_reload_event(self.h2d_stream)        # reload stream 完成后标记 reload_event
         self._groups_to_reload.pop()
         # Add the group to the reloading group to wait for the reload event.
         self._reloading_group.append(group_to_reload)
@@ -1052,7 +1052,7 @@ class ChunkOffloadHandler:
             return
         # debug_rank("--on_group_commit_forward")
         # Wait for compute to finish before starting offload
-        self.d2h_stream.wait_stream(torch.cuda.current_stream())
+        self.d2h_stream.wait_stream(torch.cuda.current_stream())    # offload stream 等待 default stream 的全部 event 完成后再执行
         self.bulk_offload(forced_released_tensors)
 
     def bulk_reload(self):
@@ -1087,10 +1087,10 @@ class ChunkOffloadHandler:
         cur_backward_chunk = PipelineOffloadManager.get_instance().cur_backward_chunk()
         assert cur_backward_chunk is self, f"Chunk mismatch {cur_backward_chunk} {self}"
         # Wait for reload to complete before using tensors
-        if not is_graph_capturing() and len(self._reloading_group) > 0:
+        if not is_graph_capturing() and len(self._reloading_group) > 0:     # 对于 last layer, 由于没有 offload, 所以 _reloading_group 为空, 不需要等待 reload_event
             for reloading_group in self._reloading_group:
                 if reloading_group._name == name:
-                    reloading_group.wait_reload_event(torch.cuda.current_stream())
+                    reloading_group.wait_reload_event(torch.cuda.current_stream())  # compute stream 等待 reload_event 被标记, 即 reload 完成后再开始计算
                     self._reloading_group.remove(reloading_group)
                     break
 
@@ -1125,8 +1125,8 @@ class ChunkOffloadHandler:
             return
         debug_rank(f"--on_group_start_backward {self}")
         # Wait for compute to finish before starting reload
-        self.h2d_stream.wait_stream(torch.cuda.current_stream())
-        self.bulk_reload()
+        self.h2d_stream.wait_stream(torch.cuda.current_stream())        # 等待 compute stream 完成, 再开始为 layer N-1 reload activations
+        self.bulk_reload()                                              # 开始 reload
 
 
 def fine_grained_offloading_disable_offload():
@@ -1300,7 +1300,7 @@ class FineGrainedActivationOffloadingInterface:
     def __enter__(self):
         """Enter context manager to enable activation offloading hooks."""
         if self.offload:
-            self.tensor = fine_grained_offloading_group_start(self.tensor, self.name)
+            self.tensor = fine_grained_offloading_group_start(self.tensor, self.name)       # wrap 训练代码
             PipelineOffloadManager.get_instance().__enter__()
         return self.tensor
 
