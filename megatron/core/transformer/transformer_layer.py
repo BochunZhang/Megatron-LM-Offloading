@@ -829,18 +829,18 @@ class TransformerLayer(GraphableMegatronModule, BaseTransformerLayer):
             # MLP module.
             hidden_states = mlp_output_with_bias[0]
         else:
-            # with self.bias_dropout_add_exec_handler():
-            #     hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
-            #         mlp_output_with_bias, residual, self.hidden_dropout
-            #     )
-            with off_interface(True, mlp_output_with_bias, "mlp_bda") as mlp_output_with_bias:
-                with self.bias_dropout_add_exec_handler():
-                    hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
-                        mlp_output_with_bias, residual, self.hidden_dropout
-                    )
-            hidden_states = off_interface.group_commit(
-                hidden_states, name="mlp_bda", forced_released_tensors=[]
-            )
+            with self.bias_dropout_add_exec_handler():
+                hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
+                    mlp_output_with_bias, residual, self.hidden_dropout
+                )
+            # with off_interface(True, mlp_output_with_bias, "mlp_bda") as mlp_output_with_bias:
+            #     with self.bias_dropout_add_exec_handler():
+            #         hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(
+            #             mlp_output_with_bias, residual, self.hidden_dropout
+            #         )
+            # hidden_states = off_interface.group_commit(
+            #     hidden_states, name="mlp_bda", forced_released_tensors=[]
+            # )
 
         nvtx_range_pop(suffix="mlp_bda")
         # Delay the offload of the mlp norm until after the mlp_bda has been computed
