@@ -119,6 +119,7 @@ def loss_func(
     """
     args = get_args()
 
+    torch.cuda.nvtx.range_push("loss_func")
     if has_nvidia_modelopt and getattr(args, 'modelopt_enabled', False):  # [ModelOpt]
         loss, num_tokens, report = loss_func_modelopt(loss_mask, output_tensor, model=model)
     else:
@@ -159,6 +160,7 @@ def loss_func(
             tolerance=0.0,  # forward pass calculations are determinisic
             fatal=False,
         )
+    torch.cuda.nvtx.range_pop()
 
     return loss, num_tokens, report
 
@@ -175,12 +177,14 @@ def forward_step(data_iterator, model: GPTModel, return_schedule_plan: bool = Fa
     timers = get_timers()
 
     # Get the batch.
+    torch.cuda.nvtx.range_push("get_batch")
     timers('batch-generator', log_level=2).start()
     global stimer
     with stimer(bdata=True):
         vp_stage = get_attr_wrapped_model(model, "vp_stage")
         tokens, labels, loss_mask, attention_mask, position_ids, packed_seq_params = get_batch(data_iterator, vp_stage)
     timers('batch-generator').stop()
+    torch.cuda.nvtx.range_pop()
 
     with stimer:
         if args.use_legacy_models:
