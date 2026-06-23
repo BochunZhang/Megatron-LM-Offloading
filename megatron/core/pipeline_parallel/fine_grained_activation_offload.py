@@ -13,6 +13,7 @@ DEBUG_RANK = 0
 from megatron.core.fp8_utils import is_mxfp8tensor, is_float8tensor
 from megatron.core.transformer.cuda_graphs import is_graph_capturing
 from megatron.core.parallel_state import get_data_parallel_rank
+from megatron.core.utils import nvtx_range_push, nvtx_range_pop
 
 def debug_rank(message):
     """Print debug message for a specific rank when DEBUG is enabled."""
@@ -1102,7 +1103,7 @@ class ChunkOffloadHandler:
         """
         if not self.do_offload:
             return
-        debug_rank(f"--on_group_start_forward {name}")
+        # debug_rank(f"--on_group_start_forward {name}")
         self._offloaded_group_index = self._offloaded_group_index + 1
         if self.is_warmup:
             self.offload_groups.append(OffloadTensorGroup(name))
@@ -1124,7 +1125,7 @@ class ChunkOffloadHandler:
         """
         if not self.do_offload:
             return
-        debug_rank(f"--on_group_start_backward {self}")
+        # debug_rank(f"--on_group_start_backward {self}")
         # Wait for compute to finish before starting reload
         self.h2d_stream.wait_stream(torch.cuda.current_stream())        # 等待 compute stream 完成, 再开始为 layer N-1 reload activations
         self.bulk_reload()                                              # 开始 reload
@@ -1153,6 +1154,7 @@ class FineGrainedOffloadingGroupCommitFunction(torch.autograd.Function):
         # pylint: disable=missing-function-docstring
         # debug_rank("FineGrainedOffloadingGroupCommitFunction forward")
 
+        nvtx_range_push(f"forward group commit {name}")
         if delay_offload:
             PipelineOffloadManager.get_instance().push_offload_groups(
                 cur_forward_chunk.on_group_commit_forward, forced_released_tensors
@@ -1161,15 +1163,17 @@ class FineGrainedOffloadingGroupCommitFunction(torch.autograd.Function):
             cur_forward_chunk.on_group_commit_forward(forced_released_tensors)
         ctx.cpu_offload_handler = cur_forward_chunk
         ctx.name = name
+        nvtx_range_pop(f"forward group commit {name}")
         return tensor
 
     @staticmethod
     def backward(ctx, *grad_output):
         # pylint: disable=missing-function-docstring
         # debug_rank("FineGrainedOffloadingGroupCommitFunction backward")
-
+        nvtx_range_push(f"backward group commit {ctx.name}")
         cpu_offload_handler = ctx.cpu_offload_handler
         cpu_offload_handler.on_group_commit_backward(ctx.name)
+        nvtx_range_pop(f"backward group commit {ctx.name}")
         return grad_output + (None, None, None, None)
 
 
@@ -1232,18 +1236,22 @@ class FineGrainedOffloadingGroupStartFunction(torch.autograd.Function):
     def forward(ctx, tensor, cpu_offload_handler, name):
         # pylint: disable=missing-function-docstring
         ctx.cpu_offload_handler = cpu_offload_handler
-        debug_rank("FineGrainedOffloadingGroupStartFunction forward")
-
+        # debug_rank("FineGrainedOffloadingGroupStartFunction forward")
+        nvtx_range_push(f"forward group start {name}")
         cpu_offload_handler.on_group_start_forward(name)
+        ctx.name = name
+        nvtx_range_pop(f"forward group start {name}")
         # return the identical tensor
         return tensor
 
     @staticmethod
     def backward(ctx, grad_output):
         # pylint: disable=missing-function-docstring
-        debug_rank("FineGrainedOffloadingGroupStartFunction backward")
+        # debug_rank("FineGrainedOffloadingGroupStartFunction backward")
+        nvtx_range_push(f"backward group start {ctx.name}")
         cpu_offload_handler = ctx.cpu_offload_handler
         cpu_offload_handler.on_group_start_backward()
+        nvtx_range_pop(f"backward group start {ctx.name}")
         return grad_output, None, None, None
 
 
