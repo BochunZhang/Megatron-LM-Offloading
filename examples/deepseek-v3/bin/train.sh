@@ -113,31 +113,50 @@ check_and_install_deep_ep() {
     local dispatcher_type=$1
     local original_path=$(pwd)
     local third_party_path="$MEGATRON_PATH/third_party"
-    local deep_ep_version="1.2.1+9af0e0d"
 
     mkdir -p "$third_party_path"
     local compute_cap=$(get_compute_capability)
 
+    dpkg -i "$third_party_path"/nccl/libnccl2*.deb
+    dpkg -i "$third_party_path"/nccl/libnccl-dev*.deb
+
     case "$dispatcher_type" in
-        deepep)
+        deepep|deepep-v1)
             local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
-            if [[ "$current_version" == "$deep_ep_version" ]]; then
+            if [[ "$current_version" == "1.2.1+9af0e0d" ]]; then
                 return 0
             else
                 cd "$third_party_path"
-                if [[ ! -d "DeepEP" ]]; then
-                    git config --global http.sslverify false
-                    git clone https://github.com/deepseek-ai/DeepEP.git DeepEP
+                if [[ ! -d "DeepEP-v1.2.1" ]]; then
+                    # git config --global http.sslverify false
+                    # git clone https://github.com/deepseek-ai/DeepEP.git DeepEP
+                    echo "DeepEP v1.2.1 not found. Please clone the DeepEP repository manually and checkout v1.2.1."
                 fi
-                cd DeepEP
-                git checkout v1.2.1
+                cd DeepEP-v1.2.1
+                TORCH_CUDA_ARCH_LIST="$compute_cap" pip3 install --no-build-isolation .
+                cd "$original_path"
+                return $?
+            fi
+            ;;
+        deepep-v2)
+            local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
+            if [[ "$current_version" == "2.0.0+local" ]]; then
+                return 0
+            else
+                cd "$third_party_path"
+                if [[ ! -d "DeepEP-epv2" ]]; then
+                    # git config --global http.sslverify false
+                    # git clone https://github.com/deepseek-ai/DeepEP.git DeepEP
+                    echo "DeepEP v2.0.0 not found. Please clone the DeepEP repository manually and checkout v2.0.0."
+                fi
+                cd DeepEP-epv2
                 TORCH_CUDA_ARCH_LIST="$compute_cap" pip3 install --no-build-isolation .
                 cd "$original_path"
                 return $?
             fi
             ;;
         hybridep)
-            if python -c "from deep_ep import HybridEpConfigInstance" 2>/dev/null; then
+            if [[ "$current_version" == 1.2.1+* && "$current_version" != "1.2.1+9af0e0d" ]]; then
                 return 0
             else
                 cd "$third_party_path"
@@ -160,7 +179,7 @@ check_and_install_deep_ep() {
 }
 
 case "$DISPATCHER" in
-    deepep|hybridep)
+    deepep|hybridep|deepep-v1|deepep-v2)
         check_and_install_deep_ep "$DISPATCHER" || { echo "Failed to install deep_ep"; exit 1; }
         ;;
     alltoall|allgather)
