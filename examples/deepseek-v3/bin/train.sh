@@ -120,12 +120,20 @@ check_and_install_deep_ep() {
     dpkg -i "$third_party_path"/nccl/libnccl2*.deb
     dpkg -i "$third_party_path"/nccl/libnccl-dev*.deb
 
+    # 1. 配置 nccl 和 nccl-dev 的安装包到 third_party/nccl (官网下载 loacl deb 包, 解压后得到 libnccl2*.deb 和 libnccl-dev*.deb)
+    # 2. clone deepep 的不同版本, checkout 到对应的 tag/branch, 然后在 deepep 目录下执行 pip install --no-build-isolation . 
+    # 3. 注意修改 setup.py, 指定 nvshmem 和 nccl 的路径
+    # 4. tag: v1.2.1 => deepep-v1
+    #    branch: epv2-release => deepep-v2 (依赖 nccl 2.29+)
+    #    branch: hybrid-ep => hybridep
+
     case "$dispatcher_type" in
         deepep|deepep-v1)
             local current_version=$(pip3 list | grep deep_ep | awk '{print $2}')
             if [[ "$current_version" == "1.2.1+9af0e0d" ]]; then
                 return 0
             else
+                pip3 uninstall -y deep_ep
                 cd "$third_party_path"
                 if [[ ! -d "DeepEP-v1.2.1" ]]; then
                     # git config --global http.sslverify false
@@ -143,6 +151,7 @@ check_and_install_deep_ep() {
             if [[ "$current_version" == "2.0.0+local" ]]; then
                 return 0
             else
+                pip3 uninstall -y deep_ep
                 cd "$third_party_path"
                 if [[ ! -d "DeepEP-epv2" ]]; then
                     # git config --global http.sslverify false
@@ -159,6 +168,7 @@ check_and_install_deep_ep() {
             if [[ "$current_version" == 1.2.1+* && "$current_version" != "1.2.1+9af0e0d" ]]; then
                 return 0
             else
+                pip3 uninstall -y deep_ep
                 cd "$third_party_path"
                 if [[ ! -d "HybridEP" ]]; then
                     git config --global http.sslverify false
