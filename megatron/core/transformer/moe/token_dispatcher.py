@@ -538,6 +538,7 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
             # ===================================================
             # [ep_size]. Represents the number of tokens sent by the current rank to other
             # EP ranks.
+            # 当前 rank 向其他 EP rank 发送的 token 数量
             self.input_splits = num_local_tokens_per_expert.reshape(
                 self.ep_size, self.num_local_experts
             ).sum(axis=1)
@@ -880,6 +881,10 @@ class MoEAlltoAllTokenDispatcher(MoETokenDispatcher):
         """
         Move all possible GPU tensors to CPU and make a synchronization at the expected point.
         """
+        # _maybe_dtoh_and_synchronize 会在 alltoall dispatcher 的各个 sync point 调用
+        # alltoall dispatcher 根据配置 (e.g. EP size, TP size, whether to pad to capacity) 决定在不同的 sync point 将 tensor shape 信息卸载到 cpu
+        # fine-grained offload & _maybe_dtoh_and_synchronize 均使用 copy engine 进行 DtoH copy
+        # copy engine 无法并行传输, 因此 alltoall dispatcher 会被 fine-grained offload 阻塞住
         if not self.drop_and_pad:
             if point == self.cuda_dtoh_point:
                 # Move all possible GPU tensors to CPU at self.cuda_dtoh_point.

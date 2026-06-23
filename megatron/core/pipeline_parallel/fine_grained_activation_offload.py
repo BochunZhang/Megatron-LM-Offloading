@@ -640,7 +640,8 @@ class PipelineOffloadManager:
         # Write JSON file
         assert torch.distributed.is_initialized()
         rank = torch.distributed.get_rank()
-        output_file = os.path.join(log_path, f"fine_grained_offload.rank[{rank}].json")
+        if rank == 0:
+            output_file = os.path.join(log_path, f"fine_grained_offload.rank[{rank}].json")
         with open(output_file, 'w') as f:
             json.dump(records_by_group, f, indent=2)
 

@@ -663,7 +663,7 @@ class GPTModel(LanguageModule):
         output_path = os.path.join(output_path, filename)
         with open(output_path, 'w') as f:
             json.dump(model_info, f, indent=2)
-        print(f"Model parameter info saved to {output_path}")
+        # print(f"Model parameter info saved to {output_path}")
 
     def forward(
         self,
