@@ -643,8 +643,8 @@ class PipelineOffloadManager:
         rank = torch.distributed.get_rank()
         if rank == 0:
             output_file = os.path.join(log_path, f"fine_grained_offload.rank[{rank}].json")
-        with open(output_file, 'w') as f:
-            json.dump(records_by_group, f, indent=2)
+            with open(output_file, 'w') as f:
+                json.dump(records_by_group, f, indent=2)
 
     def push(self, handler):
         """Add a chunk handler to the backward queue."""
